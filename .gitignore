@@ -1,0 +1,49 @@
+# 环境配置
+.env
+*.env.local
+
+# 数据和会话
+data/
+sessions/
+*.session
+*.session-journal
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 测试与覆盖率
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+
+# Lint/Format
+.ruff_cache/
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+bot.log
+
+# macOS
+.DS_Store
+
+# 临时文件
+*.tmp
+*.bak
