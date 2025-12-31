@@ -10,8 +10,6 @@
 | `OPENAI_API_KEY` | 是* | - | AI API 密钥（或使用 `API_KEY`） |
 | `OPENAI_BASE_URL` | 否 | OpenAI 官方 | API 基础 URL |
 | `AI_MODEL` | 否 | `deepseek-ai/DeepSeek-V3.2` | 模型名称 |
-| `AI_TIMEOUT_SECONDS` | 否 | `15` | AI 请求超时 |
-| `AI_MAX_RETRIES` | 否 | `1` | AI 请求失败重试次数 |
 | `AI_TIMEOUT_SECONDS` | 否 | `15` | AI 请求超时秒数 |
 | `AI_MAX_RETRIES` | 否 | `1` | AI 请求失败重试次数 |
 | `ENVIRONMENT` | 否 | `development` | 环境标识 |
@@ -43,6 +41,7 @@
 - 生产环境必须设置：`ENCRYPTION_KEY`、`ALLOWED_TELEGRAM_IDS`
 - 若确实需要允许任意用户访问，设置 `ALLOW_UNRESTRICTED_ACCESS=1`
 - 若希望在未配置 AI 时启动，设置 `ALLOW_START_WITHOUT_AI=1`
+- 变更 `BOT_TOKEN` 或访问控制配置后需重启服务生效
 
 ## 依赖锁定
 

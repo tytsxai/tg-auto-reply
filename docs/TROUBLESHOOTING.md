@@ -25,6 +25,7 @@
 
 - **命令无响应 / 没有任何回复**
   - 确认正在与 `BOT_TOKEN` 对应的 Bot 私聊。
+  - 确认发送的是命令（如 `/start`、`/login`），普通文本不会触发回复。
   - 确保服务只运行一个实例，避免 `Conflict: terminated by other getUpdates`。
   - 检查 `.env` 中 `BOT_TOKEN` 是否有效，并重启服务使配置生效。
   - 查看 `bot.log` 是否有报错信息。
