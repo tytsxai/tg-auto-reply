@@ -1139,4 +1139,4 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
     if not message:
         return
-    await message.reply_text("🤖 消息托管助手 v1.0.3\nAI: DeepSeek-V3.2")
+    await message.reply_text("🤖 消息托管助手 v1.0.4\nAI: DeepSeek-V3.2")

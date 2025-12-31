@@ -1,7 +1,9 @@
 """数据库连接管理"""
 
 import os
+from pathlib import Path
 from sqlalchemy import event
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from .models import Base, MessageLog, ContactList
 
@@ -10,6 +12,26 @@ DB_BUSY_TIMEOUT_MS = int(os.getenv("DB_BUSY_TIMEOUT_MS", "30000"))
 DB_JOURNAL_MODE = os.getenv("DB_JOURNAL_MODE", "WAL")
 DB_SYNCHRONOUS = os.getenv("DB_SYNCHRONOUS", "NORMAL")
 SCHEMA_VERSION = 2
+
+
+def _ensure_sqlite_directory(database_url: str) -> None:
+    if not database_url.startswith("sqlite"):
+        return
+    try:
+        url = make_url(database_url)
+        db_path = url.database
+    except Exception:
+        return
+    if not db_path or db_path == ":memory:":
+        return
+    try:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # 避免初始化阶段因目录问题直接崩溃，连接时会再次报错
+        pass
+
+
+_ensure_sqlite_directory(DATABASE_URL)
 
 engine_kwargs = {"echo": False, "pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):

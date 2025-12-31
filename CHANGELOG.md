@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2025-12-31
+- Ensure SQLite database directory exists before engine initialization to avoid startup failures.
+- Make migration script self-contained by adding project root to PYTHONPATH.
+
 ## [1.0.3] - 2025-12-30
 - Added missing indexes for message logs and contact lists to improve long-term performance.
 - Migration now supports upgrading existing databases to include the new indexes.
