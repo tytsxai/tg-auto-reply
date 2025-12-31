@@ -24,6 +24,7 @@ pip install -e '.[dev]'
 3. 生产环境必须设置 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`）
 4. 生产环境必须设置 `ALLOWED_TELEGRAM_IDS`（如需开放访问，设置 `ALLOW_UNRESTRICTED_ACCESS=1`）
 5. 需要健康检查时设置 `HEALTHCHECK_PORT`/`HEALTHCHECK_TOKEN`
+6. 变更 `BOT_TOKEN` 或访问控制配置后需重启服务生效
 
 ## 数据库迁移
 

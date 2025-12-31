@@ -86,10 +86,12 @@ python main.py
 
 ## 使用流程
 
-1. 在 Telegram 中找到你的机器人
-2. 发送 `/start` 开始
-3. 发送 `/login` 登录你的 Telegram 账号
-4. 发送 `/start_hosting` 开始自动回复
+1. 在 Telegram 中找到你的机器人（确保与 `BOT_TOKEN` 对应的 Bot）
+2. 仅响应命令，建议在私聊中操作
+3. 发送 `/start` 开始
+4. 发送 `/login` 登录你的 Telegram 账号（输入 API_ID / API_HASH / 验证码）
+5. 发送 `/start_hosting` 开始自动回复
+6. AI 回复发生在你的**用户账号会话**中，不会出现在与 Bot 的聊天里
 
 ## 命令列表
 
@@ -110,6 +112,8 @@ python main.py
 | `/blacklist` | 管理黑名单 |
 | `/about` | 关于本机器人 |
 | `/cancel` | 取消当前操作 |
+
+> 如未看到命令菜单，可稍等 Telegram 同步，或使用 BotFather 手动设置命令。
 
 ## 设置示例
 
