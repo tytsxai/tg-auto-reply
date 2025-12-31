@@ -92,6 +92,7 @@ python main.py
 4. 发送 `/login` 登录你的 Telegram 账号（输入 API_ID / API_HASH / 验证码）
 5. 发送 `/start_hosting` 开始自动回复
 6. AI 回复发生在你的**用户账号会话**中，不会出现在与 Bot 的聊天里
+7. 交互消息使用纯文本展示，避免 Markdown 语法符号泄露
 
 ## 命令列表
 

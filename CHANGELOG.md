@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2025-12-31
+- Removed markdown markers from bot replies to prevent formatting syntax leaks.
+- Polished login prompt copy for clearer instructions.
+
 ## [1.0.4] - 2025-12-31
 - Ensure SQLite database directory exists before engine initialization to avoid startup failures.
 - Make migration script self-contained by adding project root to PYTHONPATH.
