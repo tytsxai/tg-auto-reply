@@ -1,7 +1,7 @@
 """数据库模型定义"""
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -74,6 +74,10 @@ class MessageLog(Base):
     """消息日志表 - 透明记录所有操作"""
 
     __tablename__ = "message_logs"
+    __table_args__ = (
+        Index("idx_message_logs_user_chat_created_at", "user_id", "chat_id", "created_at"),
+        Index("idx_message_logs_user_created_at", "user_id", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"))
@@ -96,6 +100,9 @@ class ContactList(Base):
     """联系人名单 (白名单/黑名单)"""
 
     __tablename__ = "contact_lists"
+    __table_args__ = (
+        Index("idx_contact_lists_user_type_contact", "user_id", "list_type", "contact_id"),
+    )
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"))

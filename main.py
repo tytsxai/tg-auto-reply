@@ -25,6 +25,7 @@ logging.basicConfig(
     handlers=_handlers,
 )
 logger = logging.getLogger(__name__)
+_instance_lock_handle = None
 
 
 def _is_production() -> bool:
@@ -51,7 +52,10 @@ def _log_startup_summary(allowed_ids: set[int] | None) -> None:
     if allowed_ids:
         logger.info("访问控制: 已启用 (%s 用户)", len(allowed_ids))
     elif _is_production():
-        logger.warning("访问控制未配置，生产环境存在被滥用风险")
+        if _env_truthy("ALLOW_UNRESTRICTED_ACCESS"):
+            logger.warning("访问控制: 未限制访问 (ALLOW_UNRESTRICTED_ACCESS=1)")
+        else:
+            logger.warning("访问控制未配置，生产环境存在被滥用风险")
 
     logger.info(
         "运行保护: concurrent=%s pending=%s cooldown=%s",
@@ -84,6 +88,83 @@ def _env_truthy(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _require_access_control(allowed_ids: set[int] | None) -> None:
+    if not _is_production():
+        return
+    if allowed_ids:
+        return
+    if _env_truthy("ALLOW_UNRESTRICTED_ACCESS"):
+        logger.warning("已显式允许未限制访问 (ALLOW_UNRESTRICTED_ACCESS=1)")
+        return
+    raise ValueError(
+        "生产环境必须设置 ALLOWED_TELEGRAM_IDS，"
+        "如需允许任意用户请设置 ALLOW_UNRESTRICTED_ACCESS=1。"
+    )
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.strip().lower()
+    return normalized in {"127.0.0.1", "localhost", "::1"}
+
+
+def _require_healthcheck_token(health_host: str, health_token: str | None) -> None:
+    if not _is_production():
+        return
+    if _is_loopback_host(health_host):
+        return
+    if health_token:
+        return
+    raise ValueError(
+        "生产环境在非本机暴露健康检查时必须设置 HEALTHCHECK_TOKEN。"
+    )
+
+
+def _acquire_single_instance_lock() -> None:
+    if not _is_production():
+        return
+
+    db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
+    if not db_url.startswith("sqlite"):
+        return
+
+    lock_path = None
+    try:
+        from sqlalchemy.engine import make_url
+
+        url = make_url(db_url)
+        db_path = url.database
+        if db_path and db_path != ":memory:":
+            lock_path = Path(str(db_path) + ".lock")
+    except Exception:
+        lock_path = None
+
+    if lock_path is None:
+        lock_path = Path("data/bot.lock")
+
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_file = lock_path.open("a+")
+    except Exception as exc:
+        raise RuntimeError(f"无法创建实例锁文件：{lock_path} ({exc})") from exc
+
+    try:
+        import fcntl
+
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except ImportError:
+        logger.warning("当前平台不支持文件锁，无法防止多实例运行。")
+        lock_file.close()
+        return
+    except OSError as exc:
+        lock_file.close()
+        raise RuntimeError(
+            f"检测到已有实例在运行（锁文件 {lock_path}）。"
+        ) from exc
+
+    global _instance_lock_handle
+    _instance_lock_handle = lock_file
+
+
 async def main():
     """主函数"""
     from telegram.ext import (
@@ -103,6 +184,7 @@ async def main():
         raise ValueError("请设置 BOT_TOKEN 环境变量")
 
     _require_encryption_key()
+    _acquire_single_instance_lock()
 
     allow_without_ai = _env_truthy("ALLOW_START_WITHOUT_AI")
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")):
@@ -125,6 +207,7 @@ async def main():
         login_phone,
         login_code,
         login_password,
+        login_timeout,
         cancel,
         logout,
         settings,
@@ -173,6 +256,7 @@ async def main():
         return ids or None
 
     allowed_ids = _parse_allowed_ids()
+    _require_access_control(allowed_ids)
     user_filter = filters.User(user_id=list(allowed_ids)) if allowed_ids else None
 
     _log_startup_summary(allowed_ids)
@@ -184,6 +268,7 @@ async def main():
     if health_port is not None:
         health_host = os.getenv("HEALTHCHECK_HOST", "127.0.0.1")
         health_token = os.getenv("HEALTHCHECK_TOKEN")
+        _require_healthcheck_token(health_host, health_token)
         health_server = HealthServer(host=health_host, port=health_port, token=health_token)
 
     app = Application.builder().token(token).build()
@@ -202,6 +287,7 @@ async def main():
             PHONE: [MessageHandler(text_filters, login_phone)],
             CODE: [MessageHandler(text_filters, login_code)],
             PASSWORD: [MessageHandler(text_filters, login_password)],
+            ConversationHandler.TIMEOUT: [MessageHandler(filters.ALL, login_timeout)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         conversation_timeout=300,

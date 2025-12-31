@@ -266,3 +266,27 @@ async def test_wait_for_reply_tasks_timeout(db_env):
     await handlers.wait_for_reply_tasks(timeout=0.01)
     await asyncio.sleep(0)
     assert task.done()
+
+
+@pytest.mark.asyncio
+async def test_cancel_reply_tasks_for_user(db_env):
+    handlers = db_env["handlers"]
+
+    async def slow():
+        await asyncio.sleep(5)
+
+    task1 = asyncio.create_task(slow())
+    task2 = asyncio.create_task(slow())
+
+    handlers._track_reply_task(42, task1)
+    handlers._track_reply_task(42, task2)
+
+    cancelled = await handlers._cancel_reply_tasks_for_user(42)
+    await asyncio.sleep(0)
+
+    assert cancelled == 2
+    assert task1.cancelled()
+    assert task2.cancelled()
+    assert 42 not in handlers._user_reply_tasks
+    assert task1 not in handlers._active_reply_tasks
+    assert task2 not in handlers._active_reply_tasks

@@ -1,6 +1,6 @@
 [project]
 name = "tg-auto-reply"
-version = "1.0.2"
+version = "1.0.3"
 description = "AI消息托管机器人 - Telegram 自动回复"
 requires-python = ">=3.10"
 dependencies = [

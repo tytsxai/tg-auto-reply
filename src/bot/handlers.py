@@ -28,6 +28,7 @@ _reply_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REPLIES)
 _pending_lock = asyncio.Lock()
 _pending_reply_tasks = 0
 _active_reply_tasks: set[asyncio.Task] = set()
+_user_reply_tasks: dict[int, set[asyncio.Task]] = {}
 
 
 def get_pending_reply_tasks() -> int:
@@ -57,10 +58,10 @@ async def wait_for_reply_tasks(timeout: float | None = None) -> int:
         await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=timeout)
         return 0
     except asyncio.TimeoutError:
-        for task in list(_active_reply_tasks):
+        for task in tasks:
             task.cancel()
-        await asyncio.gather(*list(_active_reply_tasks), return_exceptions=True)
-        return len(_active_reply_tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
+        return len(tasks)
 
 
 async def _reserve_reply_task() -> bool:
@@ -78,9 +79,29 @@ async def _release_reply_task() -> None:
         _pending_reply_tasks = max(0, _pending_reply_tasks - 1)
 
 
-def _track_reply_task(task: asyncio.Task) -> None:
+def _track_reply_task(user_id: int, task: asyncio.Task) -> None:
     _active_reply_tasks.add(task)
-    task.add_done_callback(lambda t: _active_reply_tasks.discard(t))
+    _user_reply_tasks.setdefault(user_id, set()).add(task)
+
+    def _cleanup(done: asyncio.Task) -> None:
+        _active_reply_tasks.discard(done)
+        user_tasks = _user_reply_tasks.get(user_id)
+        if user_tasks:
+            user_tasks.discard(done)
+            if not user_tasks:
+                _user_reply_tasks.pop(user_id, None)
+
+    task.add_done_callback(_cleanup)
+
+
+async def _cancel_reply_tasks_for_user(user_id: int) -> int:
+    tasks = list(_user_reply_tasks.get(user_id, set()))
+    if not tasks:
+        return 0
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    return len(tasks)
 
 
 async def _delete_sensitive_message(update: Update) -> None:
@@ -112,9 +133,32 @@ async def _ensure_user_settings(session: AsyncSession, user: User) -> UserSettin
     return settings
 
 
+async def _is_user_active(user_id: int) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(User.is_active).where(User.id == user_id))
+        value = result.scalar_one_or_none()
+        return bool(value)
+
+
 def _clear_login_context(context: ContextTypes.DEFAULT_TYPE) -> None:
     for key in ("api_id", "api_hash", "phone", "phone_code_hash", "client"):
         context.user_data.pop(key, None)
+
+
+async def _abort_login(
+    context: ContextTypes.DEFAULT_TYPE,
+    message=None,
+    notify: str | None = None,
+) -> None:
+    client = context.user_data.get("client")
+    if client:
+        try:
+            await client.stop()
+        except Exception:
+            logger.debug("登录取消时断开客户端失败", exc_info=True)
+    _clear_login_context(context)
+    if message and notify:
+        await message.reply_text(notify)
 
 
 def _format_sender_name(sender) -> str:
@@ -457,7 +501,14 @@ async def _save_credentials(telegram_id: int, user_data: dict, client, telegram_
         credential.session_string_encrypted = encryptor.encrypt(client.get_session_string())
         credential.is_logged_in = True
         credential.last_login = datetime.utcnow()
+        if user.is_active:
+            user.is_active = False
         await session.commit()
+    existing_client = client_manager.get_client(telegram_id)
+    if existing_client and existing_client is not client:
+        await client_manager.stop_client(telegram_id)
+    if user.id:
+        await _cancel_reply_tasks_for_user(user.id)
     client_manager.add_client(client)
 
 
@@ -555,7 +606,7 @@ async def _handle_incoming_message(telegram_id: int, event: Any) -> None:
                     event=event,
                 )
             )
-            _track_reply_task(task)
+            _track_reply_task(user_id, task)
         except Exception:
             await _release_reply_task()
             raise
@@ -577,20 +628,28 @@ async def _send_reply_task(
     status = "failed"
     try:
         async with _reply_semaphore:
-            reply = await generate_reply(
-                message=original_message,
-                sender_name=sender_name or "未知",
-                context=context,
-                system_prompt=settings_snapshot.get("ai_prompt"),
-            )
-            reply = (reply or "").strip()
-            if not reply:
-                reply = "抱歉，我稍后回复您。"
-            delay = max(0, int(settings_snapshot.get("reply_delay_seconds", 0)))
-            if delay:
-                await asyncio.sleep(delay)
-            await event.respond(reply)
-            status = "sent"
+            if not await _is_user_active(user_id):
+                status = "skipped"
+            else:
+                reply = await generate_reply(
+                    message=original_message,
+                    sender_name=sender_name or "未知",
+                    context=context,
+                    system_prompt=settings_snapshot.get("ai_prompt"),
+                )
+                reply = (reply or "").strip()
+                if not reply:
+                    reply = "抱歉，我稍后回复您。"
+                delay = max(0, int(settings_snapshot.get("reply_delay_seconds", 0)))
+                if delay:
+                    await asyncio.sleep(delay)
+                if not await _is_user_active(user_id):
+                    status = "skipped"
+                else:
+                    await event.respond(reply)
+                    status = "sent"
+    except asyncio.CancelledError:
+        status = "cancelled"
     except Exception:
         logger.exception("AI 回复失败")
     finally:
@@ -723,9 +782,14 @@ async def _handle_contact_list(
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    message = update.effective_message
-    if message:
-        await message.reply_text("❌ 已取消")
+    message = update.effective_message if update else None
+    await _abort_login(context, message=message, notify="❌ 已取消")
+    return ConversationHandler.END
+
+
+async def login_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.effective_message if update else None
+    await _abort_login(context, message=message, notify="⌛ 登录超时，请重新 /login")
     return ConversationHandler.END
 
 
@@ -772,21 +836,26 @@ async def start_hosting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user.is_active = True
         await session.commit()
 
-        try:
-            api_id = int(encryptor.decrypt(credential.api_id_encrypted or ""))
-            api_hash = encryptor.decrypt(credential.api_hash_encrypted or "")
-            session_string = encryptor.decrypt(credential.session_string_encrypted or "")
-        except Exception:
-            async with async_session() as reset_session:
-                result = await reset_session.execute(
-                    select(User).where(User.telegram_id == telegram_id)
-                )
-                reset_user = result.scalar_one_or_none()
-                if reset_user:
-                    reset_user.is_active = False
-                    await reset_session.commit()
-            await message.reply_text("❌ 无法解密凭证，请 /login 重新登录")
-            return
+    try:
+        api_id = int(encryptor.decrypt(credential.api_id_encrypted or ""))
+        api_hash = encryptor.decrypt(credential.api_hash_encrypted or "")
+        session_string = encryptor.decrypt(credential.session_string_encrypted or "")
+    except Exception:
+        logger.exception("无法解密凭证")
+        async with async_session() as reset_session:
+            result = await reset_session.execute(
+                select(User)
+                .options(selectinload(User.credentials))
+                .where(User.telegram_id == telegram_id)
+            )
+            reset_user = result.scalar_one_or_none()
+            if reset_user:
+                reset_user.is_active = False
+                if reset_user.credentials:
+                    reset_user.credentials.is_logged_in = False
+                await reset_session.commit()
+        await message.reply_text("❌ 无法解密凭证，请 /login 重新登录")
+        return
 
     client = client_manager.get_client(telegram_id)
     if not client:
@@ -843,12 +912,16 @@ async def stop_hosting(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message:
         return
     await client_manager.stop_client(telegram_id)
+    user_id = None
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
         if user:
             user.is_active = False
+            user_id = user.id
             await session.commit()
+    if user_id:
+        await _cancel_reply_tasks_for_user(user_id)
     await message.reply_text(messages.HOSTING_STOPPED)
 
 
@@ -894,6 +967,7 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await client_manager.stop_client(telegram_id)
     client_manager.remove_client(telegram_id)
+    user_id = None
     async with async_session() as session:
         result = await session.execute(
             select(User).options(selectinload(User.credentials)).where(User.telegram_id == telegram_id)
@@ -901,6 +975,7 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = result.scalar_one_or_none()
         if user:
             user.is_active = False
+            user_id = user.id
             if user.credentials:
                 user.credentials.is_logged_in = False
                 user.credentials.api_id_encrypted = None
@@ -908,6 +983,8 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user.credentials.phone_encrypted = None
                 user.credentials.session_string_encrypted = None
             await session.commit()
+    if user_id:
+        await _cancel_reply_tasks_for_user(user_id)
     await message.reply_text("👋 已退出并清除本地凭证")
 
 
@@ -1062,4 +1139,4 @@ async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.effective_message
     if not message:
         return
-    await message.reply_text("🤖 消息托管助手 v1.0.2\nAI: DeepSeek-V3.2")
+    await message.reply_text("🤖 消息托管助手 v1.0.3\nAI: DeepSeek-V3.2")
