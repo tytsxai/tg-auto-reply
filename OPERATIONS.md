@@ -18,7 +18,8 @@
 | `ENCRYPTION_KEY` | 生产必填 | - | 加密密钥（Base64） |
 | `ENCRYPTION_KEY_FILE` | 否 | `data/encryption.key` | 密钥文件路径 |
 | `DATABASE_URL` | 否 | `sqlite+aiosqlite:///./data/bot.db` | 数据库连接 |
-| `ALLOWED_TELEGRAM_IDS` | 否 | - | 允许使用的用户 ID（逗号分隔） |
+| `ALLOWED_TELEGRAM_IDS` | 生产必填 | - | 允许使用的用户 ID（逗号分隔） |
+| `ALLOW_UNRESTRICTED_ACCESS` | 否 | - | 允许未限制访问（仅在需要时使用） |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别 |
 | `LOG_FILE` | 否 | - | 日志文件路径 |
 | `MAX_CONCURRENT_REPLIES` | 否 | `4` | 最大并发回复数 |
@@ -29,7 +30,7 @@
 | `ENABLE_HTTP_HEALTHCHECK` | 否 | `0` | 启用 HTTP 健康检查 |
 | `HEALTHCHECK_HOST` | 否 | `127.0.0.1` | 健康检查监听地址 |
 | `HEALTHCHECK_PORT` | 否 | - | 健康检查端口 |
-| `HEALTHCHECK_TOKEN` | 否 | - | 健康检查访问令牌 |
+| `HEALTHCHECK_TOKEN` | 否 | - | 健康检查访问令牌（生产环境对外暴露必须设置） |
 | `LOG_RETENTION_DAYS` | 否 | `90` | 日志保留天数 |
 | `DB_BUSY_TIMEOUT_MS` | 否 | `30000` | SQLite busy_timeout |
 | `DB_JOURNAL_MODE` | 否 | `WAL` | SQLite journal_mode |
@@ -39,7 +40,8 @@
 ## 必要配置
 
 - 必须设置：`BOT_TOKEN`、`OPENAI_API_KEY`（或 `API_KEY`）
-- 生产强烈建议：设置 `ENCRYPTION_KEY`，并妥善备份
+- 生产环境必须设置：`ENCRYPTION_KEY`、`ALLOWED_TELEGRAM_IDS`
+- 若确实需要允许任意用户访问，设置 `ALLOW_UNRESTRICTED_ACCESS=1`
 - 若希望在未配置 AI 时启动，设置 `ALLOW_START_WITHOUT_AI=1`
 
 ## 依赖锁定
@@ -310,3 +312,4 @@ LOG_FILE=./bot.log ./scripts/check_alerts.sh
 | database is locked | 并发写入冲突 | 检查是否多实例运行 |
 | AI 回复失败 | API 超时或配额用尽 | 检查网络和 API 状态 |
 | 回复队列已满 | 消息量过大 | 调整 `MAX_PENDING_REPLY_TASKS` |
+| 检测到已有实例在运行 | 同一 SQLite 数据库被多进程使用 | 停止重复实例后重启 |

@@ -29,8 +29,10 @@ BOT_TOKEN=your_bot_token_here
 # 环境 (development / production)
 ENVIRONMENT=development
 
-# 访问控制（可选，逗号分隔 Telegram 用户 ID）
+# 访问控制（生产环境必填，逗号分隔 Telegram 用户 ID）
 ALLOWED_TELEGRAM_IDS=
+# 如需允许任意用户访问（不推荐），设置为 1
+ALLOW_UNRESTRICTED_ACCESS=
 
 # AI API 配置 (OpenAI 兼容)
 OPENAI_API_KEY=your_api_key_here
@@ -124,9 +126,9 @@ python main.py
 ## 生产运行建议
 
 - 生产环境务必设置 `ENVIRONMENT=production` 并提供 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`），避免重启/迁移后无法解密已保存的凭证。
-- 建议配置 `ALLOWED_TELEGRAM_IDS`，避免未授权用户使用 Bot。
+- 生产环境必须配置 `ALLOWED_TELEGRAM_IDS`（或显式设置 `ALLOW_UNRESTRICTED_ACCESS=1`）。
 - 建议启用日志文件（`LOG_FILE`）并定期轮转。
-- SQLite 已启用 WAL 与 busy_timeout，但高并发场景建议迁移到更稳健的数据库。
+- SQLite 已启用 WAL 与 busy_timeout，生产环境默认启用单实例锁，避免多实例导致锁冲突；高并发场景建议迁移到更稳健的数据库。
 - 备份：至少备份 `data/bot.db` 与 `data/encryption.key`。
 - 升级版本前建议执行 `python scripts/migrate.py`，确保 schema 版本一致。
 
@@ -140,6 +142,7 @@ python main.py
 
 可选设置 `HEALTHCHECK_TOKEN`，请求时需携带：
 `X-Health-Token: <token>` 或 `Authorization: Bearer <token>`。
+生产环境若对外暴露端口，必须设置 `HEALTHCHECK_TOKEN`。
 
 详细运维说明见 `OPERATIONS.md`。
 

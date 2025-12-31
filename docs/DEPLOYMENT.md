@@ -22,7 +22,7 @@ pip install -e '.[dev]'
 1. 复制 `.env.example` 到 `.env`
 2. 设置必填项：`BOT_TOKEN`、`OPENAI_API_KEY`（或 `API_KEY`）
 3. 生产环境必须设置 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`）
-4. 可选启用 `ALLOWED_TELEGRAM_IDS` 限制访问
+4. 生产环境必须设置 `ALLOWED_TELEGRAM_IDS`（如需开放访问，设置 `ALLOW_UNRESTRICTED_ACCESS=1`）
 5. 需要健康检查时设置 `HEALTHCHECK_PORT`/`HEALTHCHECK_TOKEN`
 
 ## 数据库迁移
