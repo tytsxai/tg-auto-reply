@@ -15,6 +15,7 @@ from src.db import get_schema_version, migrate_db, SCHEMA_VERSION
 
 async def main() -> None:
     load_dotenv()
+    # Optional: restrict migration target version.
     target = os.getenv("TARGET_SCHEMA_VERSION")
     target_version = int(target) if target and target.isdigit() else None
 

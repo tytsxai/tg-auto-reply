@@ -11,7 +11,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
 DB_BUSY_TIMEOUT_MS = int(os.getenv("DB_BUSY_TIMEOUT_MS", "30000"))
 DB_JOURNAL_MODE = os.getenv("DB_JOURNAL_MODE", "WAL")
 DB_SYNCHRONOUS = os.getenv("DB_SYNCHRONOUS", "NORMAL")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _ensure_sqlite_directory(database_url: str) -> None:
@@ -71,6 +71,36 @@ async def _ensure_indexes(conn) -> None:
             index.create(sync_conn, checkfirst=True)
 
     await conn.run_sync(_create_indexes)
+
+
+async def _dedupe_contact_lists(conn) -> None:
+    """清理 contact_lists 中重复的 (user_id, list_type, contact_id) 记录。"""
+    await conn.exec_driver_sql(
+        "DELETE FROM contact_lists "
+        "WHERE id NOT IN ("
+        "SELECT id FROM ("
+        "SELECT MIN(id) AS id "
+        "FROM contact_lists "
+        "GROUP BY user_id, list_type, contact_id"
+        ") AS dedup)"
+    )
+
+
+async def _ensure_unique_contact_index(conn) -> None:
+    """确保 contact_lists 唯一索引存在（必要时重建）。"""
+    target = None
+    for index in ContactList.__table__.indexes:
+        if index.name == "idx_contact_lists_user_type_contact":
+            target = index
+            break
+    if target is None:
+        return
+
+    def _recreate(sync_conn):
+        target.drop(sync_conn, checkfirst=True)
+        target.create(sync_conn, checkfirst=True)
+
+    await conn.run_sync(_recreate)
 
 
 async def _get_schema_version(conn) -> int:
@@ -156,6 +186,13 @@ async def migrate_db(target_version: int | None = None) -> int:
             await _ensure_indexes(conn)
             await _set_schema_version(conn, 2)
             current = 2
+            if current == target:
+                return current
+        if current == 2 and target >= 3:
+            await _dedupe_contact_lists(conn)
+            await _ensure_unique_contact_index(conn)
+            await _set_schema_version(conn, 3)
+            current = 3
             if current == target:
                 return current
         raise RuntimeError(
