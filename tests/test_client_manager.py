@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy import select
 
 from src.client.manager import ClientManager, UserClient
 
@@ -58,6 +59,36 @@ def test_userclient_session_string():
 
 
 @pytest.mark.asyncio
+async def test_userclient_connect_success():
+    client = UserClient(user_id=3, api_id=123, api_hash="hash")
+
+    class DummyClient:
+        async def connect(self):
+            return None
+
+        async def is_user_authorized(self):
+            return True
+
+    client._client = DummyClient()
+    assert await client.connect() is True
+
+
+@pytest.mark.asyncio
+async def test_userclient_send_code():
+    client = UserClient(user_id=6, api_id=123, api_hash="hash")
+
+    class DummyClient:
+        async def connect(self):
+            return None
+
+        async def send_code_request(self, _phone):
+            return type("Result", (), {"phone_code_hash": "hash"})()
+
+    client._client = DummyClient()
+    assert await client.send_code("+10000000000") == "hash"
+
+
+@pytest.mark.asyncio
 async def test_userclient_start_listening():
     client = UserClient(user_id=4, api_id=123, api_hash="hash")
     event = asyncio.Event()
@@ -65,6 +96,7 @@ async def test_userclient_start_listening():
     class DummyTelethon:
         def __init__(self) -> None:
             self.handler = None
+            self.connected = False
 
         def on(self, _event):
             def decorator(func):
@@ -72,6 +104,12 @@ async def test_userclient_start_listening():
                 return func
 
             return decorator
+
+        async def connect(self):
+            self.connected = True
+
+        async def is_user_authorized(self):
+            return True
 
         async def run_until_disconnected(self):
             await event.wait()
@@ -88,7 +126,7 @@ async def test_userclient_start_listening():
     task = asyncio.create_task(client.start_listening())
     await asyncio.sleep(0)
     assert client._running is True
-    event.set()
+    await client.stop()
     await task
     assert client._running is False
 
@@ -108,3 +146,22 @@ async def test_userclient_stop():
     client._client = dummy
     await client.stop()
     assert dummy.disconnected is True
+
+
+@pytest.mark.asyncio
+async def test_mark_user_inactive(db_env):
+    manager = ClientManager()
+    db = db_env["db"]
+
+    async with db.async_session() as session:
+        user = db.User(telegram_id=7001, is_active=True)
+        session.add(user)
+        await session.commit()
+
+    await manager._mark_user_inactive(7001)
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(db.User.is_active).where(db.User.telegram_id == 7001)
+        )
+        assert result.scalar_one() is False

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
+
+UTC = timezone.utc
 from sqlalchemy import select
 
 
@@ -62,7 +64,7 @@ async def test_cooldown_skips_reply(db_env, monkeypatch):
                 original_message="prev",
                 ai_reply="prev",
                 status="sent",
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(UTC),
             )
         )
         await session.commit()

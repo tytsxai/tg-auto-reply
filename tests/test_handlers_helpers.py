@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from tests.helpers import DummyMessage, DummyUpdate
+from sqlalchemy import select
 import asyncio
+
+UTC = timezone.utc
 
 
 @pytest.mark.asyncio
@@ -21,7 +24,7 @@ async def test_build_context_and_should_reply(db_env):
         settings = db.UserSettings(user_id=user.id, ai_enabled=True, auto_reply_groups=True)
         session.add(settings)
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         session.add_all(
             [
                 db.MessageLog(
@@ -197,6 +200,9 @@ async def test_resolve_contact_target_username_failures(db_env, monkeypatch):
     handlers = db_env["handlers"]
 
     class StubClient:
+        async def stop(self):
+            return None
+
         async def connect(self):
             return False
 
@@ -244,12 +250,39 @@ async def test_pending_task_counters(db_env):
     handlers = db_env["handlers"]
     handlers._pending_reply_tasks = 0
 
-    reserved = await handlers._reserve_reply_task()
+    reserved, reason = await handlers._reserve_reply_task(1)
     assert reserved is True
+    assert reason is None
     assert handlers.get_pending_reply_tasks() == 1
 
-    await handlers._release_reply_task()
+    await handlers._release_reply_task(1)
     assert handlers.get_pending_reply_tasks() == 0
+
+
+@pytest.mark.asyncio
+async def test_per_user_pending_limit(db_env, monkeypatch):
+    handlers = db_env["handlers"]
+    handlers._pending_reply_tasks = 0
+    handlers._pending_reply_tasks_by_user.clear()
+
+    monkeypatch.setattr(handlers, "MAX_PENDING_REPLY_TASKS", 10)
+    monkeypatch.setattr(handlers, "MAX_PENDING_REPLY_TASKS_PER_USER", 1)
+
+    reserved, reason = await handlers._reserve_reply_task(1)
+    assert reserved is True
+    assert reason is None
+
+    reserved, reason = await handlers._reserve_reply_task(1)
+    assert reserved is False
+    assert reason == "per_user"
+
+    reserved, reason = await handlers._reserve_reply_task(2)
+    assert reserved is True
+    assert reason is None
+
+    await handlers._release_reply_task(1)
+    await handlers._release_reply_task(2)
+    handlers._pending_reply_tasks = 0
 
 
 @pytest.mark.asyncio
@@ -290,3 +323,109 @@ async def test_cancel_reply_tasks_for_user(db_env):
     assert 42 not in handlers._user_reply_tasks
     assert task1 not in handlers._active_reply_tasks
     assert task2 not in handlers._active_reply_tasks
+
+
+@pytest.mark.asyncio
+async def test_async_log_worker_writes(db_env):
+    handlers = db_env["handlers"]
+    db = db_env["db"]
+
+    async with db.async_session() as session:
+        user = db.User(telegram_id=1000, is_active=True)
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+
+    await handlers.stop_log_worker()
+    await handlers.start_log_worker()
+    try:
+        await handlers._log_message(
+            user_id=user_id,
+            chat_id=123,
+            chat_title="chat",
+            sender_name="tester",
+            original_message="hello",
+            ai_reply="hi",
+            status="sent",
+        )
+        await handlers.flush_log_queue(timeout=2.0)
+    finally:
+        await handlers.stop_log_worker()
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(db.MessageLog).where(db.MessageLog.user_id == user_id)
+        )
+        log = result.scalar_one()
+        assert log.status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_in_memory_cooldown_helpers(db_env, monkeypatch):
+    handlers = db_env["handlers"]
+    user_id = 1001
+    chat_id = 2002
+
+    monkeypatch.setattr(handlers, "AUTO_REPLY_COOLDOWN_SECONDS", 2)
+    monkeypatch.setattr(handlers, "INFLIGHT_COOLDOWN_TTL_SECONDS", 10)
+    await handlers._clear_user_cooldown_state(user_id)
+
+    allowed = await handlers._check_schedule_cooldown(user_id, chat_id)
+    assert allowed is True
+
+    allowed = await handlers._check_schedule_cooldown(user_id, chat_id)
+    assert allowed is False
+
+    await handlers._mark_sent_now(user_id, chat_id)
+    hit = await handlers._send_cooldown_hit(user_id, chat_id)
+    assert hit is True
+
+    await handlers._clear_user_cooldown_state(user_id)
+
+
+@pytest.mark.asyncio
+async def test_recent_context_cache_prunes(db_env, monkeypatch):
+    handlers = db_env["handlers"]
+    user_id = 1002
+
+    await handlers._clear_user_context(user_id)
+    handlers._recent_context.clear()
+    monkeypatch.setattr(handlers, "_CONTEXT_CACHE_MAX_CHATS", 1)
+
+    await handlers._update_recent_context(user_id, 1, "hi", "ok")
+    await handlers._update_recent_context(user_id, 2, "hello", "ok2")
+
+    first = await handlers._get_recent_context(user_id, 1, None)
+    second = await handlers._get_recent_context(user_id, 2, None)
+
+    assert first == []
+    assert second
+
+    await handlers._clear_user_context(user_id)
+
+
+@pytest.mark.asyncio
+async def test_chat_queue_serializes(db_env):
+    handlers = db_env["handlers"]
+    user_id = 1003
+    chat_id = 3003
+
+    await handlers._clear_user_chat_queue(user_id)
+
+    first_guard = await handlers._enter_chat_queue(user_id, chat_id)
+    entered = asyncio.Event()
+
+    async def second_entry():
+        guard = await handlers._enter_chat_queue(user_id, chat_id)
+        entered.set()
+        await handlers._exit_chat_queue(user_id, chat_id, guard)
+
+    task = asyncio.create_task(second_entry())
+    await asyncio.sleep(0)
+    assert not entered.is_set()
+
+    await handlers._exit_chat_queue(user_id, chat_id, first_guard)
+    await asyncio.wait_for(entered.wait(), timeout=1.0)
+    await task
+
+    await handlers._clear_user_chat_queue(user_id)

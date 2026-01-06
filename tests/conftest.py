@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
+import warnings
 
 import pytest_asyncio
 from cryptography.fernet import Fernet
@@ -8,6 +10,10 @@ from cryptography.fernet import Fernet
 
 @pytest_asyncio.fixture()
 async def db_env(tmp_path, monkeypatch):
+    # 忽略测试环境中的 aiosqlite 资源警告
+    warnings.filterwarnings("ignore", category=ResourceWarning, module="aiosqlite")
+    warnings.filterwarnings("ignore", message=".*garbage collector.*non-checked-in connection.*")
+
     key = Fernet.generate_key().decode()
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("ENCRYPTION_KEY", key)
@@ -31,4 +37,6 @@ async def db_env(tmp_path, monkeypatch):
 
     yield {"database": database, "db": db_pkg, "handlers": handlers}
 
+    # 确保所有待处理的异步任务完成
+    await asyncio.sleep(0)
     await database.engine.dispose()

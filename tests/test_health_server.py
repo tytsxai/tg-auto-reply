@@ -55,3 +55,16 @@ async def test_health_server_start_stop(db_env):
     server = health.HealthServer("127.0.0.1", 0, token=None)
     await server.start()
     await server.stop()
+
+
+@pytest.mark.asyncio
+async def test_health_auth_bearer_token():
+    """测试 Authorization: Bearer 格式的认证"""
+    import src.monitoring.health as health
+
+    server = health.HealthServer("127.0.0.1", 8080, token="secret")
+
+    ok_resp = await server._handle_health(
+        make_mocked_request("GET", "/healthz", headers={"Authorization": "Bearer secret"})
+    )
+    assert ok_resp.status == 200
