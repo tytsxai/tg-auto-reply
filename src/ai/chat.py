@@ -1,8 +1,12 @@
-"""AI 自动回复模块"""
+"""AI 自动回复模块 - 基于 OpenAI 兼容接口生成智能回复。
+
+支持自定义提示词、上下文对话、超时重试机制。
+"""
 
 import asyncio
 import logging
 import os
+import re
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -10,6 +14,11 @@ _client: AsyncOpenAI | None = None
 
 
 def get_client() -> AsyncOpenAI:
+    """获取或创建 OpenAI 客户端单例。
+
+    Raises:
+        ValueError: 未配置 API Key
+    """
     global _client
     if _client is None:
         api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
@@ -29,7 +38,20 @@ async def generate_reply(
     context: list[dict[str, str]] | None = None,
     system_prompt: str | None = None,
 ) -> str:
-    """生成 AI 回复"""
+    """生成 AI 回复。
+
+    Args:
+        message: 用户消息内容
+        sender_name: 发送者名称
+        context: 历史对话上下文（最多使用最近 5 条）
+        system_prompt: 自定义系统提示词
+
+    Returns:
+        str: AI 生成的回复内容
+
+    Raises:
+        Exception: AI 请求失败且重试次数用尽
+    """
 
     default_prompt = """你是用户的智能助手，帮助自动回复消息。
 规则：
@@ -63,7 +85,10 @@ async def generate_reply(
                 ),
                 timeout=timeout_seconds,
             )
-            return response.choices[0].message.content or "抱歉，我稍后回复您。"
+            reply = response.choices[0].message.content or "抱歉，我稍后回复您。"
+            # 过滤模型思考过程标签（如 <think>...</think>）
+            reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+            return reply or "抱歉，我稍后回复您。"
         except Exception as exc:
             if attempt >= max_retries:
                 raise

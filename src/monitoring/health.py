@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiohttp import web
 from sqlalchemy import func, select, text
@@ -11,6 +11,8 @@ from sqlalchemy import func, select, text
 from src.bot import handlers as bot_handlers
 from src.client import client_manager
 from src.db import SCHEMA_VERSION, async_session, get_schema_version, User
+
+UTC = timezone.utc
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class HealthServer:
         self._token = token
         self._runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
-        self._started_at = datetime.utcnow()
+        self._started_at = datetime.now(UTC)
 
     async def start(self) -> None:
         app = web.Application()
@@ -73,7 +75,7 @@ class HealthServer:
 
     async def _handle_health(self, request: web.Request) -> web.Response:
         self._require_auth(request)
-        uptime = int((datetime.utcnow() - self._started_at).total_seconds())
+        uptime = int((datetime.now(UTC) - self._started_at).total_seconds())
         return web.json_response({"status": "ok", "uptime_seconds": uptime})
 
     async def _handle_ready(self, request: web.Request) -> web.Response:
@@ -93,6 +95,8 @@ class HealthServer:
         pending = bot_handlers.get_pending_reply_tasks()
         active = bot_handlers.get_active_reply_task_count()
         concurrent, pending_limit = bot_handlers.get_reply_limits()
+        per_user_concurrent = bot_handlers.MAX_CONCURRENT_REPLIES_PER_USER
+        per_user_pending = bot_handlers.MAX_PENDING_REPLY_TASKS_PER_USER
         running_clients = client_manager.running_count()
         registered_clients = client_manager.registered_count()
 
@@ -119,6 +123,12 @@ class HealthServer:
             "# HELP bot_concurrent_reply_limit Max concurrent replies.",
             "# TYPE bot_concurrent_reply_limit gauge",
             f"bot_concurrent_reply_limit {concurrent}",
+            "# HELP bot_pending_reply_tasks_limit_per_user Max pending reply tasks per user.",
+            "# TYPE bot_pending_reply_tasks_limit_per_user gauge",
+            f"bot_pending_reply_tasks_limit_per_user {per_user_pending}",
+            "# HELP bot_concurrent_reply_limit_per_user Max concurrent replies per user.",
+            "# TYPE bot_concurrent_reply_limit_per_user gauge",
+            f"bot_concurrent_reply_limit_per_user {per_user_concurrent}",
             "# HELP bot_running_clients Running telethon clients.",
             "# TYPE bot_running_clients gauge",
             f"bot_running_clients {running_clients}",

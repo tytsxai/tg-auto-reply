@@ -64,6 +64,18 @@ def _log_startup_summary(allowed_ids: set[int] | None) -> None:
         os.getenv("AUTO_REPLY_COOLDOWN_SECONDS", "15"),
     )
     logger.info(
+        "运行保护(每用户): concurrent=%s pending=%s",
+        os.getenv("MAX_CONCURRENT_REPLIES_PER_USER", "auto"),
+        os.getenv("MAX_PENDING_REPLY_TASKS_PER_USER", "auto"),
+    )
+    logger.info(
+        "日志: async=%s batch=%s interval=%s queue=%s",
+        os.getenv("ENABLE_ASYNC_LOGGING", "1"),
+        os.getenv("LOG_BATCH_SIZE", "20"),
+        os.getenv("LOG_BATCH_INTERVAL", "1.0"),
+        os.getenv("LOG_QUEUE_MAXSIZE", "1000"),
+    )
+    logger.info(
         "AI: model=%s base_url=%s timeout=%s retries=%s",
         os.getenv("AI_MODEL", "deepseek-ai/DeepSeek-V3.2"),
         os.getenv("OPENAI_BASE_URL", os.getenv("API_BASE_URL", "")),
@@ -123,20 +135,22 @@ def _acquire_single_instance_lock() -> None:
     if not _is_production():
         return
 
-    db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
-    if not db_url.startswith("sqlite"):
-        return
+    # Allow overriding lock location to support non-SQLite DB or shared volumes.
+    lock_path_env = os.getenv("INSTANCE_LOCK_FILE", "").strip()
+    lock_path = Path(lock_path_env) if lock_path_env else None
 
-    lock_path = None
-    try:
-        from sqlalchemy.engine import make_url
+    if lock_path is None:
+        db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
+        if db_url.startswith("sqlite"):
+            try:
+                from sqlalchemy.engine import make_url
 
-        url = make_url(db_url)
-        db_path = url.database
-        if db_path and db_path != ":memory:":
-            lock_path = Path(str(db_path) + ".lock")
-    except Exception:
-        lock_path = None
+                url = make_url(db_url)
+                db_path = url.database
+                if db_path and db_path != ":memory:":
+                    lock_path = Path(str(db_path) + ".lock")
+            except Exception:
+                lock_path = None
 
     if lock_path is None:
         lock_path = Path("data/bot.lock")
@@ -152,9 +166,19 @@ def _acquire_single_instance_lock() -> None:
 
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except ImportError:
-        logger.warning("当前平台不支持文件锁，无法防止多实例运行。")
-        lock_file.close()
-        return
+        try:
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as exc:
+            lock_file.close()
+            raise RuntimeError(
+                f"检测到已有实例在运行（锁文件 {lock_path}）。"
+            ) from exc
+        except Exception:
+            logger.warning("当前平台不支持文件锁，无法防止多实例运行。")
+            lock_file.close()
+            return
     except OSError as exc:
         lock_file.close()
         raise RuntimeError(
@@ -216,6 +240,8 @@ async def main():
         blacklist,
         stats,
         about,
+        start_log_worker,
+        stop_log_worker,
         unauthorized,
         API_ID,
         API_HASH,
@@ -333,6 +359,8 @@ async def main():
     async with app:
         await app.initialize()
         await app.start()
+        if _env_truthy("ENABLE_ASYNC_LOGGING", default=True):
+            await start_log_worker()
         await app.updater.start_polling()
         if health_server:
             await health_server.start()
@@ -346,6 +374,8 @@ async def main():
                 logger.warning("仍有 %s 个回复任务未完成，已取消", remaining)
         if health_server:
             await health_server.stop()
+        if _env_truthy("ENABLE_ASYNC_LOGGING", default=True):
+            await stop_log_worker()
         await app.updater.stop()
         await app.stop()
         await app.shutdown()

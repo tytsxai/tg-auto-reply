@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from typing import Callable, Awaitable
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
@@ -11,7 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 class UserClient:
-    """单个用户的 Telethon 客户端"""
+    """单个用户的 Telethon 客户端封装。
+
+    负责管理单个用户的 Telegram 客户端连接、登录验证和消息监听。
+    使用 StringSession 实现会话持久化，支持断线重连。
+
+    Attributes:
+        user_id: Telegram 用户 ID
+        api_id: Telegram API ID
+        api_hash: Telegram API Hash
+    """
 
     def __init__(self, user_id: int, api_id: int, api_hash: str, session_string: str = ""):
         self.user_id = user_id
@@ -30,11 +40,15 @@ class UserClient:
         return self._client
 
     def get_session_string(self) -> str:
-        """获取当前 session 字符串用于持久化"""
+        """获取当前 session 字符串用于持久化存储。"""
         return self._session.save()
 
     async def connect(self) -> bool:
-        """连接客户端"""
+        """连接到 Telegram 服务器并检查授权状态。
+
+        Returns:
+            bool: True 表示已授权，False 表示需要登录
+        """
         try:
             await self.client.connect()
             return await self.client.is_user_authorized()
@@ -43,7 +57,14 @@ class UserClient:
             return False
 
     async def send_code(self, phone: str) -> str:
-        """发送验证码"""
+        """发送登录验证码到指定手机号。
+
+        Args:
+            phone: 手机号（含国家代码，如 +8613800138000）
+
+        Returns:
+            str: phone_code_hash，用于后续验证
+        """
         await self.client.connect()
         result = await self.client.send_code_request(phone)
         return result.phone_code_hash
@@ -51,7 +72,17 @@ class UserClient:
     async def sign_in(
         self, phone: str, code: str, phone_code_hash: str, password: str | None = None
     ) -> tuple[bool, str]:
-        """登录验证"""
+        """执行登录验证。
+
+        Args:
+            phone: 手机号
+            code: 验证码（两步验证时可为空）
+            phone_code_hash: send_code 返回的 hash
+            password: 两步验证密码（可选）
+
+        Returns:
+            tuple[bool, str]: (是否成功, 消息)
+        """
         try:
             await self.client.connect()
             if password:
@@ -67,11 +98,19 @@ class UserClient:
             return False, str(e)
 
     def set_message_handler(self, handler: Callable[[events.NewMessage.Event], Awaitable[None]]):
-        """设置消息处理器"""
+        """设置消息处理回调函数。
+
+        Args:
+            handler: 异步回调函数，接收 NewMessage 事件
+        """
         self._message_handler = handler
 
     async def start_listening(self):
-        """开始监听消息"""
+        """开始监听新消息，阻塞直到断开连接。
+
+        Raises:
+            ValueError: 未设置消息处理器
+        """
         if not self._message_handler:
             raise ValueError("请先设置消息处理器")
 
@@ -84,15 +123,47 @@ class UserClient:
             self._handler_registered = True
 
         self._running = True
-        logger.info(f"用户 {self.user_id} 开始监听消息")
+        reconnect_initial = float(os.getenv("CLIENT_RECONNECT_INITIAL_SECONDS", "1"))
+        reconnect_max = float(os.getenv("CLIENT_RECONNECT_MAX_SECONDS", "30"))
+        if reconnect_initial <= 0:
+            reconnect_initial = 1.0
+        if reconnect_max < reconnect_initial:
+            reconnect_max = reconnect_initial
+        backoff = reconnect_initial
+
         try:
-            await self.client.run_until_disconnected()
+            while self._running:
+                try:
+                    await self.client.connect()
+                    if not await self.client.is_user_authorized():
+                        logger.warning("用户 %s 授权失效，停止监听", self.user_id)
+                        await self.client.disconnect()
+                        break
+                    logger.info("用户 %s 开始监听消息", self.user_id)
+                    backoff = reconnect_initial
+                    await self.client.run_until_disconnected()
+                except asyncio.CancelledError:
+                    self._running = False
+                    raise
+                except Exception:
+                    logger.exception("用户 %s 监听异常", self.user_id)
+                    try:
+                        await self.client.disconnect()
+                    except Exception:
+                        logger.debug("用户 %s 断线清理失败", self.user_id, exc_info=True)
+
+                if not self._running:
+                    break
+                if backoff > 0:
+                    logger.warning("用户 %s 断线，%s 秒后重连", self.user_id, backoff)
+                    await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, reconnect_max)
         finally:
             self._running = False
-            logger.info(f"用户 {self.user_id} 监听已停止")
+            logger.info("用户 %s 监听已停止", self.user_id)
 
     async def stop(self):
-        """停止客户端"""
+        """停止客户端并断开连接。"""
         self._running = False
         if self._client:
             await self._client.disconnect()
@@ -100,19 +171,26 @@ class UserClient:
 
 
 class ClientManager:
-    """管理所有用户客户端"""
+    """全局客户端管理器，管理所有用户的 Telethon 客户端实例。
+
+    负责客户端的生命周期管理，包括注册、启动、停止和状态查询。
+    维护客户端字典和异步任务字典，支持并发运行多个用户客户端。
+    """
 
     def __init__(self):
         self._clients: dict[int, UserClient] = {}
         self._tasks: dict[int, asyncio.Task] = {}
 
     def get_client(self, user_id: int) -> UserClient | None:
+        """获取指定用户的客户端实例。"""
         return self._clients.get(user_id)
 
     def add_client(self, client: UserClient):
+        """注册客户端到管理器。"""
         self._clients[client.user_id] = client
 
     def remove_client(self, user_id: int):
+        """移除客户端并取消其监听任务。"""
         if user_id in self._clients:
             del self._clients[user_id]
         if user_id in self._tasks:
@@ -120,19 +198,20 @@ class ClientManager:
             del self._tasks[user_id]
 
     def is_running(self, user_id: int) -> bool:
+        """检查指定用户的客户端是否正在运行。"""
         task = self._tasks.get(user_id)
         return bool(task and not task.done())
 
     def running_count(self) -> int:
-        """正在运行的客户端数量"""
+        """返回正在运行的客户端数量。"""
         return sum(1 for task in self._tasks.values() if not task.done())
 
     def registered_count(self) -> int:
-        """已注册的客户端数量"""
+        """返回已注册的客户端数量。"""
         return len(self._clients)
 
     async def start_client(self, user_id: int):
-        """启动用户客户端监听"""
+        """启动指定用户的客户端监听任务。"""
         client = self._clients.get(user_id)
         if not client:
             return
@@ -145,7 +224,8 @@ class ClientManager:
         task.add_done_callback(lambda t: self._handle_task_done(user_id, t))
 
     def _handle_task_done(self, user_id: int, task: asyncio.Task):
-        if self._tasks.get(user_id) is task:
+        is_current = self._tasks.get(user_id) is task
+        if is_current:
             del self._tasks[user_id]
         try:
             task.result()
@@ -154,7 +234,9 @@ class ClientManager:
         except Exception:
             logger.exception("用户 %s 监听任务异常退出", user_id)
         finally:
-            self._schedule_mark_inactive(user_id)
+            # 只在当前任务仍为现行监听时才标记 inactive，避免新任务被旧任务覆盖
+            if is_current:
+                self._schedule_mark_inactive(user_id)
 
     def _schedule_mark_inactive(self, user_id: int):
         try:
@@ -175,7 +257,7 @@ class ClientManager:
                 await session.commit()
 
     async def stop_client(self, user_id: int):
-        """停止用户客户端"""
+        """停止指定用户的客户端并取消监听任务。"""
         client = self._clients.get(user_id)
         if client:
             await client.stop()
@@ -184,7 +266,7 @@ class ClientManager:
             del self._tasks[user_id]
 
     async def stop_all(self):
-        """停止所有客户端"""
+        """停止所有客户端。"""
         for user_id in list(self._clients.keys()):
             await self.stop_client(user_id)
 
