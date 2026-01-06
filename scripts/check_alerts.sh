@@ -12,7 +12,7 @@ if [ ! -f "$LOG_FILE" ]; then
 fi
 
 LOOKBACK_LINES="${ALERT_LOOKBACK_LINES:-500}"
-PATTERN="${ALERT_KEYWORDS:-AI 回复失败|回复队列已满|database is locked|登录已失效}"
+PATTERN="${ALERT_KEYWORDS:-AI 回复失败|回复队列已满|database is locked|登录已失效|terminated by other getUpdates}"
 
 if tail -n "$LOOKBACK_LINES" "$LOG_FILE" | grep -E "$PATTERN" >/dev/null 2>&1; then
   echo "🚨 告警：检测到关键错误日志"

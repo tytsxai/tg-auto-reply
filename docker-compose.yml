@@ -1,0 +1,9 @@
+services:
+  tg-auto-reply:
+    build: .
+    container_name: tg-auto-reply
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

@@ -30,6 +30,10 @@
   - 检查 `.env` 中 `BOT_TOKEN` 是否有效，并重启服务使配置生效。
   - 查看 `bot.log` 是否有报错信息。
 
+- **出现 `terminated by other getUpdates`**
+  - 表示有多个实例在拉取更新（Polling 冲突）。
+  - 停止重复实例，并设置 `INSTANCE_LOCK_FILE` 防止多实例运行。
+
 - **检测到已有实例在运行**
   - SQLite 启用了单实例锁。
   - 停止重复实例后重启服务。

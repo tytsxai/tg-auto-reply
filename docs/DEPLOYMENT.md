@@ -25,6 +25,7 @@ pip install -e '.[dev]'
 4. 生产环境必须设置 `ALLOWED_TELEGRAM_IDS`（如需开放访问，设置 `ALLOW_UNRESTRICTED_ACCESS=1`）
 5. 需要健康检查时设置 `HEALTHCHECK_PORT`/`HEALTHCHECK_TOKEN`
 6. 变更 `BOT_TOKEN` 或访问控制配置后需重启服务生效
+7. 生产建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突
 
 ## 数据库迁移
 
@@ -33,6 +34,8 @@ pip install -e '.[dev]'
 ```bash
 python scripts/migrate.py
 ```
+
+如需限定目标版本，可设置 `TARGET_SCHEMA_VERSION` 后再运行迁移脚本。
 
 ## systemd（示例）
 

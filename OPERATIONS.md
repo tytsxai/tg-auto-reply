@@ -20,20 +20,36 @@
 | `ALLOW_UNRESTRICTED_ACCESS` | 否 | - | 允许未限制访问（仅在需要时使用） |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别 |
 | `LOG_FILE` | 否 | - | 日志文件路径 |
+| `ENABLE_ASYNC_LOGGING` | 否 | `1` | 启用异步日志写入 |
+| `LOG_QUEUE_MAXSIZE` | 否 | `1000` | 异步日志队列容量 |
+| `LOG_BATCH_SIZE` | 否 | `20` | 异步日志批量写入条数 |
+| `LOG_BATCH_INTERVAL` | 否 | `1.0` | 异步日志批量写入间隔（秒） |
 | `MAX_CONCURRENT_REPLIES` | 否 | `4` | 最大并发回复数 |
+| `MAX_CONCURRENT_REPLIES_PER_USER` | 否 | `auto` | 单用户最大并发回复数 |
 | `MAX_PENDING_REPLY_TASKS` | 否 | `200` | 最大等待队列长度 |
+| `MAX_PENDING_REPLY_TASKS_PER_USER` | 否 | `auto` | 单用户最大等待队列长度 |
 | `AUTO_REPLY_COOLDOWN_SECONDS` | 否 | `15` | 同一聊天回复冷却时间 |
+| `INFLIGHT_COOLDOWN_TTL_SECONDS` | 否 | `auto` | 内存冷却状态清理阈值（秒） |
+| `CONTEXT_MAX_MESSAGES` | 否 | `10` | 内存上下文最大消息条数 |
+| `CONTEXT_CACHE_MAX_CHATS` | 否 | `1000` | 内存上下文最大对话数 |
+| `CONTEXT_TTL_SECONDS` | 否 | `21600` | 内存上下文保留时间（秒） |
 | `SHUTDOWN_GRACE_PERIOD_SECONDS` | 否 | `10` | 退出时等待中的回复任务宽限 |
+| `INSTANCE_LOCK_FILE` | 否 | `data/bot.lock` | 实例锁文件路径（防止多实例冲突） |
 | `ENABLE_STARTUP_HEALTHCHECKS` | 否 | `1` | 启动时自检数据库 |
 | `ENABLE_HTTP_HEALTHCHECK` | 否 | `0` | 启用 HTTP 健康检查 |
 | `HEALTHCHECK_HOST` | 否 | `127.0.0.1` | 健康检查监听地址 |
 | `HEALTHCHECK_PORT` | 否 | - | 健康检查端口 |
 | `HEALTHCHECK_TOKEN` | 否 | - | 健康检查访问令牌（生产环境对外暴露必须设置） |
+| `CLIENT_RECONNECT_INITIAL_SECONDS` | 否 | `1` | 客户端断线重连初始等待 |
+| `CLIENT_RECONNECT_MAX_SECONDS` | 否 | `30` | 客户端断线重连最大等待 |
 | `LOG_RETENTION_DAYS` | 否 | `90` | 日志保留天数 |
+| `ALERT_LOOKBACK_LINES` | 否 | `500` | 告警检测回溯行数（check_alerts.sh） |
+| `ALERT_KEYWORDS` | 否 | - | 告警关键字（正则，check_alerts.sh 使用） |
 | `DB_BUSY_TIMEOUT_MS` | 否 | `30000` | SQLite busy_timeout |
 | `DB_JOURNAL_MODE` | 否 | `WAL` | SQLite journal_mode |
 | `DB_SYNCHRONOUS` | 否 | `NORMAL` | SQLite synchronous |
 | `ALLOW_START_WITHOUT_AI` | 否 | - | 未配置 AI 时允许启动 |
+| `TARGET_SCHEMA_VERSION` | 否 | `SCHEMA_VERSION` | 迁移目标版本（仅 scripts/migrate.py 使用） |
 
 ## 必要配置
 
@@ -142,6 +158,7 @@ python scripts/migrate.py
 ```
 
 脚本会创建表结构并初始化 schema 版本号。
+如需限定目标版本，可在执行前设置 `TARGET_SCHEMA_VERSION`（仅用于迁移脚本）。
 
 ## 定时任务示例
 
@@ -215,6 +232,7 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 - "回复队列已满"（负载过高，消息被丢弃）
 - "database is locked"（SQLite 并发写冲突）
 - "登录已失效"（用户会话失效）
+- "terminated by other getUpdates"（多实例冲突）
 
 也可以使用脚本（依赖 `LOG_FILE`）：
 
@@ -286,6 +304,7 @@ LOG_FILE=./bot.log ./scripts/check_alerts.sh
 - 回复队列已满
 - database is locked
 - 登录已失效
+- terminated by other getUpdates
 
 ### install_cron.sh - 定时任务安装
 

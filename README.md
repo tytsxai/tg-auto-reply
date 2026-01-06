@@ -55,18 +55,41 @@ LOG_FILE=
 
 # 运行保护
 MAX_CONCURRENT_REPLIES=4
+# 留空则自动派生（默认约为全局的一半）
+MAX_CONCURRENT_REPLIES_PER_USER=
 MAX_PENDING_REPLY_TASKS=200
+# 留空则自动派生（默认约为全局的一半，且不超过 50）
+MAX_PENDING_REPLY_TASKS_PER_USER=
 AUTO_REPLY_COOLDOWN_SECONDS=15
+# 可选：内存级冷却窗口清理（秒）
+INFLIGHT_COOLDOWN_TTL_SECONDS=
+# 可选：内存上下文长度（条消息，默认 10）
+CONTEXT_MAX_MESSAGES=10
+# 可选：内存上下文最大对话数（默认 1000）
+CONTEXT_CACHE_MAX_CHATS=1000
+# 可选：内存上下文 TTL（秒，默认 21600）
+CONTEXT_TTL_SECONDS=21600
 SHUTDOWN_GRACE_PERIOD_SECONDS=10
 AI_TIMEOUT_SECONDS=15
 AI_MAX_RETRIES=1
+INSTANCE_LOCK_FILE=
+
+# 异步日志（默认启用）
+ENABLE_ASYNC_LOGGING=1
+LOG_QUEUE_MAXSIZE=1000
+LOG_BATCH_SIZE=20
+LOG_BATCH_INTERVAL=1.0
+
+# 客户端断线重连
+CLIENT_RECONNECT_INITIAL_SECONDS=1
+CLIENT_RECONNECT_MAX_SECONDS=30
 
 # 启动自检
 ENABLE_STARTUP_HEALTHCHECKS=1
 
 # 告警检测
 ALERT_LOOKBACK_LINES=500
-ALERT_KEYWORDS=AI 回复失败|回复队列已满|database is locked|登录已失效
+ALERT_KEYWORDS=AI 回复失败|回复队列已满|database is locked|登录已失效|terminated by other getUpdates
 
 # 日志清理
 LOG_RETENTION_DAYS=90
@@ -133,6 +156,7 @@ python main.py
 - 生产环境务必设置 `ENVIRONMENT=production` 并提供 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`），避免重启/迁移后无法解密已保存的凭证。
 - 生产环境必须配置 `ALLOWED_TELEGRAM_IDS`（或显式设置 `ALLOW_UNRESTRICTED_ACCESS=1`）。
 - 建议启用日志文件（`LOG_FILE`）并定期轮转。
+- 建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突。
 - SQLite 已启用 WAL 与 busy_timeout，生产环境默认启用单实例锁，避免多实例导致锁冲突；高并发场景建议迁移到更稳健的数据库。
 - 备份：至少备份 `data/bot.db` 与 `data/encryption.key`。
 - 升级版本前建议执行 `python scripts/migrate.py`，确保 schema 版本一致。
@@ -206,9 +230,11 @@ python main.py
 
 ## 文档入口
 
+- 用户指南：`docs/USER_GUIDE.md`
 - 生产运维：`OPERATIONS.md`
 - 部署指南：`docs/DEPLOYMENT.md`
 - API 与命令说明：`docs/API.md`
+- 开发者指南：`docs/DEVELOPMENT.md`
 - 故障排查：`docs/TROUBLESHOOTING.md`
 - 变更记录：`CHANGELOG.md`
 
@@ -239,3 +265,18 @@ pip install -e .
 | `user_settings` | 用户个性化设置（AI 开关、延迟、提示词等） |
 | `message_logs` | 消息回复日志（原始消息、AI 回复、状态） |
 | `contact_lists` | 白名单/黑名单联系人 |
+
+## 消息状态说明
+
+| 状态 | 说明 |
+|------|------|
+| `sent` | 回复已成功发送 |
+| `failed` | AI 生成或发送失败 |
+| `skipped` | 因设置（黑名单/白名单/群聊过滤）跳过 |
+| `cooldown` | 冷却时间内，跳过回复 |
+| `dropped` | 队列已满，消息被丢弃 |
+| `cancelled` | 任务被取消（停止托管/登出时） |
+
+## 许可证
+
+MIT License
