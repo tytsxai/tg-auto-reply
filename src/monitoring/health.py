@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 from sqlalchemy import func, select, text
 
+from src.ai import get_circuit_status
 from src.bot import handlers as bot_handlers
 from src.client import client_manager
 from src.db import SCHEMA_VERSION, async_session, get_schema_version, User
@@ -139,6 +140,17 @@ class HealthServer:
             "# TYPE bot_schema_version gauge",
             f"bot_schema_version {SCHEMA_VERSION}",
         ]
+
+        # AI 熔断器状态
+        circuit = get_circuit_status()
+        lines.extend([
+            "# HELP bot_ai_circuit_open AI circuit breaker state (1=open, 0=closed).",
+            "# TYPE bot_ai_circuit_open gauge",
+            f"bot_ai_circuit_open {1 if circuit['is_open'] else 0}",
+            "# HELP bot_ai_circuit_failures AI consecutive failure count.",
+            "# TYPE bot_ai_circuit_failures gauge",
+            f"bot_ai_circuit_failures {circuit['failure_count']}",
+        ])
 
         if active_users is not None:
             lines.extend(
