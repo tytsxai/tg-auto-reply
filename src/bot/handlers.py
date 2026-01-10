@@ -1691,7 +1691,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def about(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from src.version import __version__
     message = update.effective_message
     if not message:
         return
-    await message.reply_text("🤖 消息托管助手 v1.0.5\nAI: DeepSeek-V3.2")
+    await message.reply_text(f"🤖 消息托管助手 v{__version__}\nAI: DeepSeek-V3.2")

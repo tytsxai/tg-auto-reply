@@ -11,6 +11,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/bot.db")
 DB_BUSY_TIMEOUT_MS = int(os.getenv("DB_BUSY_TIMEOUT_MS", "30000"))
 DB_JOURNAL_MODE = os.getenv("DB_JOURNAL_MODE", "WAL")
 DB_SYNCHRONOUS = os.getenv("DB_SYNCHRONOUS", "NORMAL")
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 SCHEMA_VERSION = 3
 
 
@@ -36,6 +38,9 @@ _ensure_sqlite_directory(DATABASE_URL)
 engine_kwargs = {"echo": False, "pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     engine_kwargs["connect_args"] = {"timeout": max(DB_BUSY_TIMEOUT_MS, 1000) / 1000}
+else:
+    engine_kwargs["pool_size"] = DB_POOL_SIZE
+    engine_kwargs["max_overflow"] = DB_MAX_OVERFLOW
 
 engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
