@@ -12,10 +12,14 @@
 | `AI_MODEL` | 否 | `deepseek-ai/DeepSeek-V3.2` | 模型名称 |
 | `AI_TIMEOUT_SECONDS` | 否 | `15` | AI 请求超时秒数 |
 | `AI_MAX_RETRIES` | 否 | `1` | AI 请求失败重试次数 |
+| `AI_CIRCUIT_FAILURE_THRESHOLD` | 否 | `5` | AI 熔断触发阈值（连续失败次数） |
+| `AI_CIRCUIT_RESET_SECONDS` | 否 | `60` | AI 熔断重置时间（秒） |
 | `ENVIRONMENT` | 否 | `development` | 环境标识 |
 | `ENCRYPTION_KEY` | 生产必填 | - | 加密密钥（Base64） |
 | `ENCRYPTION_KEY_FILE` | 否 | `data/encryption.key` | 密钥文件路径 |
 | `DATABASE_URL` | 否 | `sqlite+aiosqlite:///./data/bot.db` | 数据库连接 |
+| `DB_POOL_SIZE` | 否 | `5` | 数据库连接池大小（非 SQLite） |
+| `DB_MAX_OVERFLOW` | 否 | `10` | 数据库连接池溢出上限（非 SQLite） |
 | `ALLOWED_TELEGRAM_IDS` | 生产必填 | - | 允许使用的用户 ID（逗号分隔） |
 | `ALLOW_UNRESTRICTED_ACCESS` | 否 | - | 允许未限制访问（仅在需要时使用） |
 | `LOG_LEVEL` | 否 | `INFO` | 日志级别 |
