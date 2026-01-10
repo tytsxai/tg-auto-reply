@@ -75,3 +75,40 @@ def test_get_client_with_base_url(monkeypatch):
     reloaded = importlib.reload(chat)
     client = reloaded.get_client()
     assert "example.com" in str(client.base_url)
+
+
+# 熔断器测试
+def test_circuit_breaker_initial_state():
+    """熔断器初始状态应为关闭。"""
+    status = chat.get_circuit_status()
+    assert status["failure_count"] == 0
+    assert status["threshold"] > 0
+
+
+def test_circuit_breaker_records_success():
+    """成功调用应重置失败计数。"""
+    chat._circuit_failure_count = 3
+    chat._record_success()
+    assert chat._circuit_failure_count == 0
+
+
+def test_circuit_breaker_records_failure():
+    """失败应增加计数。"""
+    chat._circuit_failure_count = 0
+    chat._circuit_open_until = None
+    chat._record_failure()
+    assert chat._circuit_failure_count == 1
+
+
+@pytest.mark.asyncio
+async def test_circuit_breaker_skips_when_open(monkeypatch):
+    """熔断器打开时应跳过请求。"""
+    from datetime import datetime, timedelta, timezone
+    chat._circuit_open_until = datetime.now(timezone.utc) + timedelta(seconds=60)
+
+    reply = await chat.generate_reply(
+        message="test", sender_name="Test", context=[], system_prompt=None
+    )
+
+    assert "系统繁忙" in reply
+    chat._circuit_open_until = None

@@ -1,16 +1,24 @@
 """AI 自动回复模块 - 基于 OpenAI 兼容接口生成智能回复。
 
-支持自定义提示词、上下文对话、超时重试机制。
+支持自定义提示词、上下文对话、超时重试机制、熔断保护。
 """
 
 import asyncio
 import logging
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 _client: AsyncOpenAI | None = None
+
+# 熔断器状态
+_circuit_failure_count = 0
+_circuit_open_until: datetime | None = None
+_CIRCUIT_FAILURE_THRESHOLD = int(os.getenv("AI_CIRCUIT_FAILURE_THRESHOLD", "5"))
+_CIRCUIT_RESET_SECONDS = int(os.getenv("AI_CIRCUIT_RESET_SECONDS", "60"))
+UTC = timezone.utc
 
 
 def get_client() -> AsyncOpenAI:
@@ -30,6 +38,47 @@ def get_client() -> AsyncOpenAI:
             kwargs["base_url"] = base_url
         _client = AsyncOpenAI(**kwargs)
     return _client
+
+
+def _is_circuit_open() -> bool:
+    """检查熔断器是否处于打开状态。"""
+    global _circuit_open_until
+    if _circuit_open_until is None:
+        return False
+    if datetime.now(UTC) >= _circuit_open_until:
+        _circuit_open_until = None
+        return False
+    return True
+
+
+def _record_failure() -> None:
+    """记录失败并在达到阈值时打开熔断器。"""
+    global _circuit_failure_count, _circuit_open_until
+    _circuit_failure_count += 1
+    if _circuit_failure_count >= _CIRCUIT_FAILURE_THRESHOLD:
+        _circuit_open_until = datetime.now(UTC) + timedelta(seconds=_CIRCUIT_RESET_SECONDS)
+        logger.warning(
+            "AI 熔断器已打开，连续失败 %d 次，%d 秒后重试",
+            _circuit_failure_count,
+            _CIRCUIT_RESET_SECONDS,
+        )
+        _circuit_failure_count = 0
+
+
+def _record_success() -> None:
+    """记录成功，重置失败计数。"""
+    global _circuit_failure_count
+    _circuit_failure_count = 0
+
+
+def get_circuit_status() -> dict:
+    """获取熔断器状态（用于监控）。"""
+    return {
+        "is_open": _is_circuit_open(),
+        "failure_count": _circuit_failure_count,
+        "threshold": _CIRCUIT_FAILURE_THRESHOLD,
+        "reset_seconds": _CIRCUIT_RESET_SECONDS,
+    }
 
 
 async def generate_reply(
@@ -52,6 +101,10 @@ async def generate_reply(
     Raises:
         Exception: AI 请求失败且重试次数用尽
     """
+    # 熔断检查
+    if _is_circuit_open():
+        logger.warning("AI 熔断器处于打开状态，跳过请求")
+        return "抱歉，系统繁忙，稍后回复您。"
 
     default_prompt = """你是用户的智能助手，帮助自动回复消息。
 规则：
@@ -88,9 +141,11 @@ async def generate_reply(
             reply = response.choices[0].message.content or "抱歉，我稍后回复您。"
             # 过滤模型思考过程标签（如 <think>...</think>）
             reply = re.sub(r"<think>.*?</think>", "", reply, flags=re.DOTALL).strip()
+            _record_success()
             return reply or "抱歉，我稍后回复您。"
         except Exception as exc:
             if attempt >= max_retries:
+                _record_failure()
                 raise
             logger.warning("AI 请求失败，准备重试(%s/%s): %s", attempt + 1, max_retries + 1, exc)
             await asyncio.sleep(min(2 ** attempt, 5))
