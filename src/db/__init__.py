@@ -6,6 +6,7 @@ from .database import (
     get_schema_version,
     migrate_db,
     verify_schema_version,
+    dispose_engine,
     SCHEMA_VERSION,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "get_schema_version",
     "migrate_db",
     "verify_schema_version",
+    "dispose_engine",
     "SCHEMA_VERSION",
 ]

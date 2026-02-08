@@ -209,3 +209,8 @@ async def get_session() -> AsyncSession:
     """获取数据库会话"""
     async with async_session() as session:
         yield session
+
+
+async def dispose_engine() -> None:
+    """释放数据库连接池资源。"""
+    await engine.dispose()

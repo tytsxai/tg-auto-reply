@@ -199,7 +199,7 @@ async def main():
         filters,
     )
     from sqlalchemy import update, text
-    from src.db import init_db, async_session, User, verify_schema_version
+    from src.db import init_db, async_session, User, verify_schema_version, dispose_engine
     from src.monitoring import HealthServer
 
     # 初始化数据库
@@ -356,31 +356,56 @@ async def main():
             await session.commit()
 
     logger.info("Bot 启动中...")
-    async with app:
-        await app.initialize()
-        await app.start()
-        if _env_truthy("ENABLE_ASYNC_LOGGING", default=True):
-            await start_log_worker()
-        await app.updater.start_polling()
-        if health_server:
-            await health_server.start()
+    async_logging_enabled = _env_truthy("ENABLE_ASYNC_LOGGING", default=True)
+    try:
+        async with app:
+            await app.initialize()
+            await app.start()
+            if async_logging_enabled:
+                await start_log_worker()
+            await app.updater.start_polling()
+            if health_server:
+                await health_server.start()
 
-        await stop_event.wait()
-        logger.info("开始优雅停机...")
-        shutdown_grace = _env_int("SHUTDOWN_GRACE_PERIOD_SECONDS", 10)
-        if shutdown_grace is not None and shutdown_grace >= 0:
-            remaining = await wait_for_reply_tasks(timeout=float(shutdown_grace))
-            if remaining:
-                logger.warning("仍有 %s 个回复任务未完成，已取消", remaining)
+            await stop_event.wait()
+            logger.info("开始优雅停机...")
+            shutdown_grace = _env_int("SHUTDOWN_GRACE_PERIOD_SECONDS", 10)
+            if shutdown_grace is not None and shutdown_grace >= 0:
+                remaining = await wait_for_reply_tasks(timeout=float(shutdown_grace))
+                if remaining:
+                    logger.warning("仍有 %s 个回复任务未完成，已取消", remaining)
+            if health_server:
+                await health_server.stop()
+            if async_logging_enabled:
+                await stop_log_worker()
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
+            await client_manager.stop_all()
+            await _mark_all_inactive()
+    finally:
         if health_server:
-            await health_server.stop()
-        if _env_truthy("ENABLE_ASYNC_LOGGING", default=True):
-            await stop_log_worker()
-        await app.updater.stop()
-        await app.stop()
-        await app.shutdown()
-        await client_manager.stop_all()
-        await _mark_all_inactive()
+            try:
+                await health_server.stop()
+            except Exception:
+                logger.debug("停止健康检查服务失败", exc_info=True)
+        if async_logging_enabled:
+            try:
+                await stop_log_worker()
+            except Exception:
+                logger.debug("停止异步日志任务失败", exc_info=True)
+        try:
+            await client_manager.stop_all()
+        except Exception:
+            logger.debug("停止客户端管理器失败", exc_info=True)
+        try:
+            await _mark_all_inactive()
+        except Exception:
+            logger.debug("清理用户活动状态失败", exc_info=True)
+        try:
+            await dispose_engine()
+        except Exception:
+            logger.debug("释放数据库连接池失败", exc_info=True)
 
 
 if __name__ == "__main__":
