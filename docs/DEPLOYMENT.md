@@ -37,6 +37,8 @@ python scripts/migrate.py
 
 如需限定目标版本，可设置 `TARGET_SCHEMA_VERSION` 后再运行迁移脚本。
 
+建议将该步骤固化到部署流水线中，避免“代码已升级但 schema 未升级”导致启动失败。
+
 ## systemd（示例）
 
 ```
@@ -46,6 +48,8 @@ EnvironmentFile=/opt/telegram-bot/.env
 ExecStart=/opt/telegram-bot/.venv/bin/python /opt/telegram-bot/main.py
 Restart=on-failure
 ```
+
+建议补充：`RestartSec=5`、`TimeoutStopSec=30`，并确保 `EnvironmentFile` 指向生产 `.env`。
 
 ## 回滚建议
 

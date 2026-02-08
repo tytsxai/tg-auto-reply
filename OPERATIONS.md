@@ -196,7 +196,8 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 1. 停止服务
 2. 备份 `data/bot.db` 与密钥
 3. 更新代码并重新安装依赖（如有变化）
-4. 启动服务并观察日志
+4. 执行 `python scripts/migrate.py`
+5. 启动服务并观察日志
 
 回滚流程建议：
 1. 停止服务
@@ -244,6 +245,9 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 ./scripts/check_alerts.sh
 ```
 
+`check_alerts.sh`、`backup.sh`、`install_cron.sh` 会自动读取项目根目录 `.env`，
+确保 cron 等非交互环境也能使用一致配置。
+
 ## 定时任务安装
 
 使用脚本生成/安装 cron（不会覆盖已有任务）：
@@ -272,9 +276,10 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 ```
 
 功能：
-- 优先使用 `sqlite3 .backup` 命令（热备份）
+- 优先使用 `sqlite3 .backup` 命令（热备份，失败时自动回退复制）
 - 自动备份 `encryption.key`（如未使用环境变量）
 - 文件名格式：`bot.db.YYYY-MM-DD`
+- 会自动读取项目根目录 `.env`，并按 `DATABASE_URL` 解析 SQLite 数据库路径
 
 ### migrate.py - 数据库迁移
 
