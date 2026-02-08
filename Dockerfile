@@ -21,8 +21,4 @@ RUN pip install --no-cache-dir .
 # 创建数据目录
 RUN mkdir -p /app/data
 
-# 健康检查（依赖 ENABLE_HTTP_HEALTHCHECK=1）
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -sf http://127.0.0.1:8080/healthz || exit 1
-
 CMD ["python", "main.py"]

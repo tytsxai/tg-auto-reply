@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$ROOT_DIR/.env"
+  set +a
+fi
 BACKUP_DIR="${1:-$ROOT_DIR/backups}"
 RETENTION_DAYS="${2:-${LOG_RETENTION_DAYS:-90}}"
 

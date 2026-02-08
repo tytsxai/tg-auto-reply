@@ -1,6 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$ROOT_DIR/.env"
+  set +a
+fi
+
 LOG_FILE="${LOG_FILE:-}"
 if [ -z "$LOG_FILE" ]; then
   echo "❌ LOG_FILE 未设置"
