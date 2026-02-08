@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import importlib
 
 import pytest
 
@@ -9,6 +10,30 @@ from sqlalchemy import select
 import asyncio
 
 UTC = timezone.utc
+
+
+def test_optional_env_blank_uses_defaults(monkeypatch):
+    monkeypatch.setenv("MAX_PENDING_REPLY_TASKS_PER_USER", "")
+    monkeypatch.setenv("MAX_CONCURRENT_REPLIES_PER_USER", "")
+    monkeypatch.setenv("INFLIGHT_COOLDOWN_TTL_SECONDS", "")
+    monkeypatch.setenv("LOG_BATCH_INTERVAL", "")
+
+    import src.bot.handlers as handlers
+
+    handlers = importlib.reload(handlers)
+    assert handlers.MAX_PENDING_REPLY_TASKS_PER_USER >= 1
+    assert handlers.MAX_CONCURRENT_REPLIES_PER_USER >= 1
+    assert handlers.INFLIGHT_COOLDOWN_TTL_SECONDS >= 60
+    assert handlers._LOG_BATCH_INTERVAL >= 0.1
+
+
+def test_invalid_env_raises_value_error(monkeypatch):
+    monkeypatch.setenv("MAX_PENDING_REPLY_TASKS", "abc")
+
+    import src.bot.handlers as handlers
+
+    with pytest.raises(ValueError):
+        importlib.reload(handlers)
 
 
 @pytest.mark.asyncio

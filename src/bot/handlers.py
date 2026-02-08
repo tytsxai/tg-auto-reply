@@ -33,20 +33,47 @@ API_ID, API_HASH, PHONE, CODE, PASSWORD = range(5)
 
 UTC = timezone.utc
 
-MAX_CONCURRENT_REPLIES = max(1, int(os.getenv("MAX_CONCURRENT_REPLIES", "4")))
-MAX_PENDING_REPLY_TASKS = max(1, int(os.getenv("MAX_PENDING_REPLY_TASKS", "200")))
-AUTO_REPLY_COOLDOWN_SECONDS = max(0, int(os.getenv("AUTO_REPLY_COOLDOWN_SECONDS", "15")))
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        value = default
+    else:
+        text = raw.strip()
+        if not text.lstrip("-").isdigit():
+            raise ValueError(f"环境变量 {name} 必须是整数")
+        value = int(text)
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
+def _env_float(name: str, default: float, *, minimum: float | None = None) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        value = default
+    else:
+        text = raw.strip()
+        try:
+            value = float(text)
+        except ValueError as exc:
+            raise ValueError(f"环境变量 {name} 必须是数字") from exc
+    if minimum is not None:
+        value = max(minimum, value)
+    return value
+
+
+MAX_CONCURRENT_REPLIES = _env_int("MAX_CONCURRENT_REPLIES", 4, minimum=1)
+MAX_PENDING_REPLY_TASKS = _env_int("MAX_PENDING_REPLY_TASKS", 200, minimum=1)
+AUTO_REPLY_COOLDOWN_SECONDS = _env_int("AUTO_REPLY_COOLDOWN_SECONDS", 15, minimum=0)
 _default_per_user_pending = max(1, min(50, MAX_PENDING_REPLY_TASKS // 2))
 _default_per_user_concurrent = max(1, MAX_CONCURRENT_REPLIES // 2)
 MAX_PENDING_REPLY_TASKS_PER_USER = min(
     MAX_PENDING_REPLY_TASKS,
-    max(1, int(os.getenv("MAX_PENDING_REPLY_TASKS_PER_USER", str(_default_per_user_pending)))),
+    _env_int("MAX_PENDING_REPLY_TASKS_PER_USER", _default_per_user_pending, minimum=1),
 )
 MAX_CONCURRENT_REPLIES_PER_USER = min(
     MAX_CONCURRENT_REPLIES,
-    max(
-        1, int(os.getenv("MAX_CONCURRENT_REPLIES_PER_USER", str(_default_per_user_concurrent)))
-    ),
+    _env_int("MAX_CONCURRENT_REPLIES_PER_USER", _default_per_user_concurrent, minimum=1),
 )
 _reply_semaphore = asyncio.Semaphore(MAX_CONCURRENT_REPLIES)
 _pending_lock = asyncio.Lock()
@@ -56,9 +83,9 @@ _active_reply_tasks: set[asyncio.Task] = set()
 _user_reply_tasks: dict[int, set[asyncio.Task]] = {}
 _user_semaphores: dict[int, asyncio.Semaphore] = {}
 
-_LOG_QUEUE_MAXSIZE = max(10, int(os.getenv("LOG_QUEUE_MAXSIZE", "1000")))
-_LOG_BATCH_SIZE = max(1, int(os.getenv("LOG_BATCH_SIZE", "20")))
-_LOG_BATCH_INTERVAL = float(os.getenv("LOG_BATCH_INTERVAL", "1.0"))
+_LOG_QUEUE_MAXSIZE = _env_int("LOG_QUEUE_MAXSIZE", 1000, minimum=10)
+_LOG_BATCH_SIZE = _env_int("LOG_BATCH_SIZE", 20, minimum=1)
+_LOG_BATCH_INTERVAL = _env_float("LOG_BATCH_INTERVAL", 1.0, minimum=0.1)
 _LOG_STOP = object()
 _log_queue: asyncio.Queue["_LogRecord"] | None = None
 _log_worker_task: asyncio.Task | None = None
@@ -68,13 +95,14 @@ _last_scheduled_at: dict[tuple[int, int], datetime] = {}
 _last_sent_at: dict[tuple[int, int], datetime] = {}
 _inflight_ttl_default = max(3600, AUTO_REPLY_COOLDOWN_SECONDS * 10)
 INFLIGHT_COOLDOWN_TTL_SECONDS = max(
-    60, int(os.getenv("INFLIGHT_COOLDOWN_TTL_SECONDS", str(_inflight_ttl_default)))
+    60,
+    _env_int("INFLIGHT_COOLDOWN_TTL_SECONDS", _inflight_ttl_default, minimum=60),
 )
 _context_lock = asyncio.Lock()
 _recent_context: dict[tuple[int, int], deque[tuple[datetime, str, str]]] = {}
-_CONTEXT_MAX_MESSAGES = max(4, int(os.getenv("CONTEXT_MAX_MESSAGES", "10")))
-_CONTEXT_CACHE_MAX_CHATS = max(100, int(os.getenv("CONTEXT_CACHE_MAX_CHATS", "1000")))
-_CONTEXT_TTL_SECONDS = max(300, int(os.getenv("CONTEXT_TTL_SECONDS", "21600")))
+_CONTEXT_MAX_MESSAGES = _env_int("CONTEXT_MAX_MESSAGES", 10, minimum=4)
+_CONTEXT_CACHE_MAX_CHATS = _env_int("CONTEXT_CACHE_MAX_CHATS", 1000, minimum=100)
+_CONTEXT_TTL_SECONDS = _env_int("CONTEXT_TTL_SECONDS", 21600, minimum=300)
 _chat_tail_lock = asyncio.Lock()
 _chat_task_tail: dict[tuple[int, int], asyncio.Future] = {}
 
