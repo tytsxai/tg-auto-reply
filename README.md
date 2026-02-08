@@ -263,6 +263,9 @@ pip install -r requirements.lock
 pip install -e .
 ```
 
+`requirements.lock` 使用精确版本（`==`）以保证可复现安装；
+更新锁文件时请在干净虚拟环境中仅安装运行时依赖后重新生成。
+
 ## 数据库模型
 
 | 表名 | 说明 |

@@ -71,6 +71,8 @@
 pip install -r requirements.lock
 pip install -e .
 ```
+
+注意：`requirements.lock` 必须保持精确版本（`==`），避免发布后因依赖漂移导致行为不一致。
 - 可选：`LOG_FILE`（启用文件日志）
 - 可选：`ALLOWED_TELEGRAM_IDS`（限制控制 Bot 的用户）
 
@@ -247,6 +249,8 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 
 `check_alerts.sh`、`backup.sh`、`install_cron.sh` 会自动读取项目根目录 `.env`，
 确保 cron 等非交互环境也能使用一致配置。
+
+若在容器内设置了 `HEALTHCHECK_TOKEN`，请确保编排层健康探针也携带 token。
 
 ## 定时任务安装
 

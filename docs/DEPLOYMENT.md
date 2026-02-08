@@ -11,6 +11,8 @@ pip install -r requirements.lock
 pip install -e .
 ```
 
+`requirements.lock` 使用精确版本锁（`==`），用于保证发布可复现。
+
 如需开发/测试依赖：
 
 ```bash
