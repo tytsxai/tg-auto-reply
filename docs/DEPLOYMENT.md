@@ -58,3 +58,12 @@ Restart=on-failure
 - 停止服务
 - 恢复 `data/bot.db` 与 `data/encryption.key`
 - 回滚代码版本并重启
+
+## 上线前最后核对
+
+请在发布窗口前逐项勾选 `docs/READY_CHECKLIST.md`，确保：
+
+- 生产必填配置均已设置（尤其 `ENCRYPTION_KEY`、`ALLOWED_TELEGRAM_IDS`）
+- 迁移与备份演练已完成
+- 健康检查走 `GET /readyz`（不仅是进程存活）
+- 回滚步骤已演练且可在值班时间内执行

@@ -176,11 +176,23 @@ python main.py
 `X-Health-Token: <token>` 或 `Authorization: Bearer <token>`。
 生产环境若对外暴露端口，必须设置 `HEALTHCHECK_TOKEN`。
 
+配置建议：可选数值型变量（如 `MAX_*`、`INFLIGHT_COOLDOWN_TTL_SECONDS`）留空即可回退默认值，
+不要填写非数字字符串。
+
 > 容器场景建议把健康检查配置到编排层（如 docker-compose / K8s），
 > 并确保探针端口与 `HEALTHCHECK_PORT` 一致；
 > 若启用了 `HEALTHCHECK_TOKEN`，探针也需携带 token。
 
 详细运维说明见 `OPERATIONS.md`。
+
+## 上线前检查
+
+上线前请使用 `docs/READY_CHECKLIST.md` 逐项确认，重点覆盖：
+
+- 生产必填环境变量与访问控制
+- 数据迁移与备份恢复演练
+- 健康检查、日志与告警连通性
+- 回滚路径可执行性
 
 ## 获取 API 凭证
 

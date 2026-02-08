@@ -139,6 +139,9 @@ cp data/encryption.key backups/encryption.key.$(date +%F)
 ./scripts/backup.sh
 ```
 
+注意：备份脚本默认执行热备份（优先 `sqlite3 .backup`，否则回退 Python sqlite3 backup API），
+若热备份失败会直接返回非 0，避免落地潜在损坏的备份文件。
+
 可通过传参指定备份目录：
 
 ```bash
