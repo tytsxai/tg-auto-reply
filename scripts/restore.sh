@@ -69,6 +69,71 @@ resolve_sqlite_db_path() {
   echo "$ROOT_DIR/${resolved#./}"
 }
 
+
+resolve_lock_path() {
+  local db_path="$1"
+  local lock_path="${INSTANCE_LOCK_FILE:-}"
+  if [ -n "$lock_path" ]; then
+    echo "$lock_path"
+    return 0
+  fi
+  if [ -n "$db_path" ] && [ "$db_path" != ":memory:" ]; then
+    echo "$db_path.lock"
+    return 0
+  fi
+  echo "$ROOT_DIR/data/bot.lock"
+}
+
+ensure_service_stopped() {
+  local lock_path="$1"
+  if [ -z "$lock_path" ]; then
+    return 0
+  fi
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "⚠️ 未找到 python3，无法检测实例锁，请确保服务已停止后再恢复" >&2
+    return 0
+  fi
+
+  set +e
+  python3 - "$lock_path" <<'PYLOCK'
+import os
+import sys
+
+path = sys.argv[1]
+
+try:
+    import fcntl
+except ImportError:
+    raise SystemExit(0)
+
+parent = os.path.dirname(path)
+if parent:
+    os.makedirs(parent, exist_ok=True)
+
+with open(path, "a+") as fh:
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit(2)
+    except OSError:
+        raise SystemExit(0)
+PYLOCK
+  rc=$?
+  set -e
+
+  if [ "$rc" -eq 0 ]; then
+    return 0
+  fi
+
+  if [ "$rc" -eq 2 ]; then
+    echo "❌ 检测到实例锁被占用：$lock_path" >&2
+    echo "   请先停止正在运行的服务后再执行恢复。" >&2
+    exit 1
+  fi
+
+  echo "⚠️ 无法可靠检测实例锁状态，请确认服务已停止：$lock_path" >&2
+}
+
 validate_sqlite_file() {
   local path="$1"
   if ! command -v python3 >/dev/null 2>&1; then
@@ -122,6 +187,9 @@ if [[ "$DB_PATH" == ":memory:" ]]; then
   echo "❌ DATABASE_URL=:memory: 无法执行文件恢复" >&2
   exit 2
 fi
+
+LOCK_PATH="$(resolve_lock_path "$DB_PATH")"
+ensure_service_stopped "$LOCK_PATH"
 
 if ! validate_sqlite_file "$DB_BACKUP_SOURCE"; then
   echo "❌ 数据库备份完整性校验失败：$DB_BACKUP_SOURCE" >&2

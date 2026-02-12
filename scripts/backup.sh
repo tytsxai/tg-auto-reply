@@ -128,7 +128,13 @@ elif [ -f "$DB_PATH" ]; then
     exit 1
   fi
 else
-  echo "⚠️ 未找到数据库文件：$DB_PATH" >&2
+  if [ "${BACKUP_ALLOW_MISSING_DB:-0}" = "1" ]; then
+    echo "⚠️ 未找到数据库文件：${DB_PATH} (BACKUP_ALLOW_MISSING_DB=1，已跳过)" >&2
+  else
+    echo "❌ 未找到数据库文件：$DB_PATH" >&2
+    echo "   如确认当前实例尚未初始化，可临时设置 BACKUP_ALLOW_MISSING_DB=1 跳过。" >&2
+    exit 1
+  fi
 fi
 
 if [ -z "${ENCRYPTION_KEY:-}" ]; then

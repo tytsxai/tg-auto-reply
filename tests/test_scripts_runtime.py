@@ -409,3 +409,321 @@ def test_restore_script_rejects_invalid_backup(tmp_path):
             env_path.write_text(old_env, encoding="utf-8")
         elif env_path.exists():
             env_path.unlink()
+
+
+def test_backup_script_missing_db_fails_by_default(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "backup.sh"
+    backup_dir = tmp_path / "backups"
+    missing_db = tmp_path / "missing" / "bot.db"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            f"DATABASE_URL=sqlite+aiosqlite:///{missing_db}\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_dir)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        assert completed.returncode != 0
+        assert "未找到数据库文件" in completed.stderr
+        assert not list(backup_dir.glob("bot.db.*"))
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_backup_script_allows_missing_db_when_explicitly_configured(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "backup.sh"
+    backup_dir = tmp_path / "backups"
+    missing_db = tmp_path / "missing" / "bot.db"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    f"DATABASE_URL=sqlite+aiosqlite:///{missing_db}",
+                    "BACKUP_ALLOW_MISSING_DB=1",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_dir)],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        assert completed.returncode == 0
+        assert "已跳过" in completed.stderr
+        assert not list(backup_dir.glob("bot.db.*"))
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_restore_script_rejects_when_lock_is_held(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "restore.sh"
+
+    backup_db = tmp_path / "backup.db"
+    conn = sqlite3.connect(backup_db)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('from-backup')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    live_db = tmp_path / "runtime" / "bot.db"
+    live_db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(live_db)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('from-live')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    lock_path = tmp_path / "runtime" / "bot.lock"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    lock_holder = None
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    f"DATABASE_URL=sqlite+aiosqlite:///{live_db}",
+                    f"INSTANCE_LOCK_FILE={lock_path}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        lock_holder = subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import fcntl, os, time; "
+                "p=os.environ['LOCK_PATH']; "
+                "os.makedirs(os.path.dirname(p), exist_ok=True); "
+                "f=open(p, 'a+'); "
+                "fcntl.flock(f.fileno(), fcntl.LOCK_EX); "
+                "time.sleep(30)",
+            ],
+            env={**os.environ.copy(), "LOCK_PATH": str(lock_path)},
+        )
+
+        # 等待锁进程完成加锁
+        import time
+
+        time.sleep(0.6)
+
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_db)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode != 0
+        assert "实例锁被占用" in completed.stderr
+    finally:
+        if lock_holder is not None:
+            lock_holder.terminate()
+            try:
+                lock_holder.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                lock_holder.kill()
+
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_ready_check_script_reports_production_access_control_gap(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "ready_check.py"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    "ENVIRONMENT=production",
+                    "BOT_TOKEN=test-token",
+                    "OPENAI_API_KEY=test-api-key",
+                    "ENCRYPTION_KEY=6rJY4PaAt9wwz2ZX4ioNmeQflxFbJ84xP40pTVF6RzQ=",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [_test_python(root), str(script)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode != 0
+        assert "ALLOWED_TELEGRAM_IDS" in completed.stdout
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_ready_check_strict_mode_can_import_project_modules(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "ready_check.py"
+    db_path = tmp_path / "ready-check.db"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    "ENVIRONMENT=production",
+                    "BOT_TOKEN=test-token",
+                    "OPENAI_API_KEY=test-api-key",
+                    "ENCRYPTION_KEY=6rJY4PaAt9wwz2ZX4ioNmeQflxFbJ84xP40pTVF6RzQ=",
+                    "ALLOWED_TELEGRAM_IDS=123456",
+                    f"DATABASE_URL=sqlite+aiosqlite:///{db_path}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [_test_python(root), str(script), "--strict"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode == 0
+        assert "strict_db" in completed.stdout
+        assert "No module named 'src'" not in completed.stdout
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_ready_check_rejects_invalid_encryption_key_format(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "ready_check.py"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    "ENVIRONMENT=production",
+                    "BOT_TOKEN=test-token",
+                    "OPENAI_API_KEY=test-api-key",
+                    "ENCRYPTION_KEY=invalid-key",
+                    "ALLOWED_TELEGRAM_IDS=123456",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [_test_python(root), str(script)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode != 0
+        assert "ENCRYPTION_KEY 格式非法" in completed.stdout
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_ready_check_rejects_invalid_allowed_telegram_ids(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "ready_check.py"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    "ENVIRONMENT=production",
+                    "BOT_TOKEN=test-token",
+                    "OPENAI_API_KEY=test-api-key",
+                    "ENCRYPTION_KEY=6rJY4PaAt9wwz2ZX4ioNmeQflxFbJ84xP40pTVF6RzQ=",
+                    "ALLOWED_TELEGRAM_IDS=123456,abc",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            [_test_python(root), str(script)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode != 0
+        assert "包含非法 ID" in completed.stdout
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
