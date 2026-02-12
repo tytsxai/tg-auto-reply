@@ -19,6 +19,7 @@
 │   ├── backup.sh                # SQLite 热备份 + 密钥备份
 │   ├── restore.sh               # SQLite 恢复 + 恢复前快照 + 完整性校验
 │   ├── migrate.py               # schema 迁移入口
+│   ├── ready_check.py           # 生产预检（配置/依赖/schema 快速体检）
 │   ├── cleanup_logs.py          # 历史日志清理
 │   ├── check_alerts.sh          # 基于关键词的日志告警检查
 │   └── install_cron.sh          # 定时备份/清理/告警任务安装
@@ -78,3 +79,9 @@ main.py
 - 增强 `handlers.py` 日志可靠性观测：增加日志丢弃/失败/回退计数指标。
 - 增强 `health.py` 就绪探针：当启用异步日志但 worker 异常时，`/readyz` 返回 503。
 - 调整 `client/manager.py`：`UserClient.connect()` 连接异常改为向上抛出，由调用方区分“失效登录”与“瞬时故障”。
+- 修复运行依赖：补齐 `greenlet`（SQLAlchemy asyncio 必需），避免生产环境运行时崩溃。
+- 强化备份恢复脚本：`backup.sh` 默认在数据库文件缺失时失败并告警；`restore.sh` 增加实例锁占用检查，防止“服务运行中误恢复”。
+- 新增 `scripts/ready_check.py`：上线前可执行预检，覆盖生产必填项、数字配置合法性、依赖与数据库可用性。
+- 强化 `main.py` 生产密钥校验：启动阶段验证 `ENCRYPTION_KEY/ENCRYPTION_KEY_FILE` 的 Fernet 格式，避免运行中解密才失败。
+- 强化 `handlers.py` 停机可靠性：日志 worker 异常/阻塞时可超时回收并统计丢弃量，避免停机卡死。
+- 强化 `client/manager.py` 停止路径：`stop_client()` 对客户端 stop 异常进行兜底并确保监听任务被回收。

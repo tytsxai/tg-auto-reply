@@ -29,6 +29,16 @@ pip install -e '.[dev]'
 6. 变更 `BOT_TOKEN` 或访问控制配置后需重启服务生效
 7. 生产建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突
 
+## 上线前预检（推荐）
+
+在迁移前先执行：
+
+```bash
+python scripts/ready_check.py --strict
+```
+
+该脚本会检查生产必填配置、数值型环境变量合法性、greenlet 依赖、数据库可用性与 schema 版本。
+
 ## 数据库迁移
 
 首次部署或更新版本后执行：
@@ -57,7 +67,7 @@ Restart=on-failure
 
 - 停止服务
 - 回滚代码版本
-- 执行恢复：`./scripts/restore.sh <db-backup> <key-backup>`
+- 执行恢复：`./scripts/restore.sh <db-backup> <key-backup>`（脚本会先检查实例锁，防止服务运行中误恢复）
 - 重启并确认 `GET /readyz` 返回 200
 
 ## 上线前最后核对

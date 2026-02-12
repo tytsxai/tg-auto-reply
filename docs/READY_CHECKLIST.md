@@ -4,6 +4,7 @@
 
 ## 1) 配置与密钥
 
+- [ ] 先执行自动预检：`python scripts/ready_check.py --strict`
 - [ ] `ENVIRONMENT=production`
 - [ ] 已设置 `BOT_TOKEN`
 - [ ] 已设置 `OPENAI_API_KEY`（或 `API_KEY`）
@@ -17,7 +18,9 @@
 - [ ] 首次部署或升级后执行：`python scripts/migrate.py`
 - [ ] 校验 schema：`GET /readyz` 返回 200
 - [ ] 已执行一次备份演练：`./scripts/backup.sh /your/backup/path`
+  - 若数据库文件缺失，脚本会直接失败（防止“备份假成功”）；仅首次初始化场景可临时 `BACKUP_ALLOW_MISSING_DB=1`
 - [ ] 已执行一次恢复演练：`./scripts/restore.sh <db-backup> <key-backup>`（至少在测试环境）
+  - 恢复脚本会检查实例锁；若提示锁被占用，先停服务再恢复
 - [ ] 可恢复验证：至少验证可从备份文件恢复并启动成功
 
 ## 3) 单实例与并发

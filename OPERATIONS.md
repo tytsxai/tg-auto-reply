@@ -47,6 +47,7 @@
 | `CLIENT_RECONNECT_INITIAL_SECONDS` | 否 | `1` | 客户端断线重连初始等待 |
 | `CLIENT_RECONNECT_MAX_SECONDS` | 否 | `30` | 客户端断线重连最大等待 |
 | `LOG_RETENTION_DAYS` | 否 | `90` | 日志保留天数 |
+| `BACKUP_ALLOW_MISSING_DB` | 否 | `0` | 允许 backup.sh 在 DB 文件缺失时返回成功（仅首次初始化可临时开启） |
 | `ALERT_LOOKBACK_LINES` | 否 | `500` | 告警检测回溯行数（check_alerts.sh） |
 | `ALERT_KEYWORDS` | 否 | - | 告警关键字（正则，check_alerts.sh 使用） |
 | `DB_BUSY_TIMEOUT_MS` | 否 | `30000` | SQLite busy_timeout |
@@ -75,6 +76,18 @@ pip install -e .
 注意：`requirements.lock` 必须保持精确版本（`==`），避免发布后因依赖漂移导致行为不一致。
 - 可选：`LOG_FILE`（启用文件日志）
 - 可选：`ALLOWED_TELEGRAM_IDS`（限制控制 Bot 的用户）
+
+## 上线前自动预检（推荐）
+
+```bash
+python scripts/ready_check.py --strict
+```
+
+会检查：
+- 生产必填配置（访问控制、密钥、健康检查令牌）
+- 数值型环境变量合法性
+- `greenlet` 运行依赖
+- 数据库初始化与 schema 版本一致性
 
 ## 启动与停止
 
@@ -140,7 +153,8 @@ cp data/encryption.key backups/encryption.key.$(date +%F)
 ```
 
 注意：备份脚本默认执行热备份（优先 `sqlite3 .backup`，否则回退 Python sqlite3 backup API），
-若热备份失败会直接返回非 0，避免落地潜在损坏的备份文件。
+若热备份失败或数据库文件缺失会直接返回非 0，避免“备份假成功”。
+仅在首次初始化未落地 DB 的特殊场景可临时设置 `BACKUP_ALLOW_MISSING_DB=1`。
 
 可通过传参指定备份目录：
 
@@ -195,6 +209,7 @@ Persistent=true
 ```
 
 脚本会：
+- 先检查实例锁占用，检测到服务仍运行时直接拒绝恢复
 - 校验备份文件是否为可读 SQLite
 - 覆盖前自动保留 `*.pre-restore.<timestamp>` 快照
 - 覆盖后再次校验数据库完整性
@@ -275,6 +290,20 @@ Persistent=true
 - 如设置 `HEALTHCHECK_TOKEN`，需通过 `X-Health-Token` 或 `Authorization: Bearer` 访问
 
 ## 脚本使用说明
+
+### ready_check.py - 上线前预检
+
+```bash
+# 基础预检（仅检查配置与依赖）
+python scripts/ready_check.py
+
+# 严格预检（额外验证数据库初始化与 schema 版本）
+python scripts/ready_check.py --strict
+```
+
+输出说明：
+- 出现 `❌` 且汇总失败项 > 0：禁止上线，先修复
+- 仅有 `提示`（WARN）：可上线，但建议按提示项补齐配置
 
 ### backup.sh - 数据库备份
 

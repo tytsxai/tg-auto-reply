@@ -96,6 +96,8 @@ ALERT_KEYWORDS=AI 回复失败|回复队列已满|database is locked|登录已�
 
 # 日志清理
 LOG_RETENTION_DAYS=90
+# 备份保护：默认数据库文件缺失会直接失败；仅在“首次初始化未落地 DB”场景可临时设为 1
+BACKUP_ALLOW_MISSING_DB=0
 
 # 数据库健壮性
 DB_BUSY_TIMEOUT_MS=30000
@@ -162,7 +164,8 @@ python main.py
 - 建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突。
 - SQLite 已启用 WAL 与 busy_timeout，生产环境默认启用单实例锁，避免多实例导致锁冲突；高并发场景建议迁移到更稳健的数据库。
 - 备份：至少备份 `data/bot.db` 与 `data/encryption.key`。
-- 恢复建议使用 `./scripts/restore.sh <db-backup> <key-backup>`，可自动做完整性校验与恢复前快照。
+- 恢复建议使用 `./scripts/restore.sh <db-backup> <key-backup>`，脚本会先检测实例锁，避免“运行中误恢复”。
+- `./scripts/backup.sh` 在数据库文件缺失时默认直接失败（防止假成功）；仅首次初始化场景可临时 `BACKUP_ALLOW_MISSING_DB=1`。
 - 升级版本前建议执行 `python scripts/migrate.py`，确保 schema 版本一致。
 
 ## 监控与健康检查（可选）
@@ -188,7 +191,13 @@ python main.py
 
 ## 上线前检查
 
-上线前请使用 `docs/READY_CHECKLIST.md` 逐项确认，重点覆盖：
+建议先执行自动预检：
+
+```bash
+python scripts/ready_check.py --strict
+```
+
+再使用 `docs/READY_CHECKLIST.md` 逐项确认，重点覆盖：
 
 - 生产必填环境变量与访问控制
 - 数据迁移与备份恢复演练
@@ -239,6 +248,9 @@ python main.py
 │       └── crypto.py    # Fernet 加密工具
 ├── scripts/
 │   ├── backup.sh        # 数据库与密钥备份脚本
+│   ├── restore.sh       # 数据库/密钥恢复脚本（含快照与完整性校验）
+│   ├── migrate.py       # schema 迁移脚本
+│   ├── ready_check.py   # 上线前生产预检脚本
 │   ├── cleanup_logs.py  # 日志清理脚本
 │   ├── check_alerts.sh  # 告警检测脚本
 │   └── install_cron.sh  # 定时任务安装脚本
