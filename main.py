@@ -32,14 +32,36 @@ def _is_production() -> bool:
     return os.getenv("ENVIRONMENT", "").strip().lower() in {"prod", "production"}
 
 
+def _validate_fernet_key(key_value: str, source: str) -> None:
+    from cryptography.fernet import Fernet
+
+    try:
+        Fernet(key_value.encode())
+    except Exception as exc:
+        raise ValueError(
+            f"{source} 格式非法（需要 Fernet urlsafe-base64 32-byte key）。"
+        ) from exc
+
+
 def _require_encryption_key() -> None:
     if not _is_production():
         return
-    if os.getenv("ENCRYPTION_KEY"):
+
+    env_key = os.getenv("ENCRYPTION_KEY", "").strip()
+    if env_key:
+        _validate_fernet_key(env_key, "ENCRYPTION_KEY")
         return
-    key_file = os.getenv("ENCRYPTION_KEY_FILE")
-    if key_file and Path(key_file).exists():
-        return
+
+    key_file = (os.getenv("ENCRYPTION_KEY_FILE") or "").strip()
+    if key_file:
+        key_path = Path(key_file)
+        if key_path.exists():
+            key_value = key_path.read_text(encoding="utf-8").strip()
+            if not key_value:
+                raise ValueError(f"ENCRYPTION_KEY_FILE 指向空文件：{key_path}")
+            _validate_fernet_key(key_value, "ENCRYPTION_KEY_FILE")
+            return
+
     raise ValueError(
         "生产环境必须设置 ENCRYPTION_KEY，或设置 ENCRYPTION_KEY_FILE 指向已有密钥文件。"
     )

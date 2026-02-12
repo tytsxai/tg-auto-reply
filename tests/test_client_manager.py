@@ -166,3 +166,70 @@ async def test_mark_user_inactive(db_env):
             select(db.User.is_active).where(db.User.telegram_id == 7001)
         )
         assert result.scalar_one() is False
+
+
+@pytest.mark.asyncio
+async def test_stop_client_handles_stop_exception_and_cleans_task():
+    manager = ClientManager()
+
+    class BadStopClient:
+        def __init__(self, user_id: int) -> None:
+            self.user_id = user_id
+
+        async def stop(self) -> None:
+            raise RuntimeError("stop failed")
+
+    client = BadStopClient(user_id=11)
+    manager.add_client(client)
+
+    blocker = asyncio.Event()
+
+    async def pending():
+        await blocker.wait()
+
+    task = asyncio.create_task(pending())
+    manager._tasks[11] = task
+
+    await manager.stop_client(11)
+    await asyncio.sleep(0)
+
+    assert 11 not in manager._tasks
+    assert task.cancelled() or task.done()
+
+
+@pytest.mark.asyncio
+async def test_stop_all_continues_when_one_client_stop_fails():
+    manager = ClientManager()
+
+    class BadStopClient:
+        def __init__(self, user_id: int) -> None:
+            self.user_id = user_id
+
+        async def stop(self) -> None:
+            raise RuntimeError("boom")
+
+    class GoodStopClient:
+        def __init__(self, user_id: int) -> None:
+            self.user_id = user_id
+            self.stopped = False
+
+        async def stop(self) -> None:
+            self.stopped = True
+
+    bad = BadStopClient(user_id=21)
+    good = GoodStopClient(user_id=22)
+    manager.add_client(bad)
+    manager.add_client(good)
+
+    blocker = asyncio.Event()
+
+    async def pending():
+        await blocker.wait()
+
+    manager._tasks[21] = asyncio.create_task(pending())
+    manager._tasks[22] = asyncio.create_task(pending())
+
+    await manager.stop_all()
+
+    assert good.stopped is True
+    assert manager._tasks == {}

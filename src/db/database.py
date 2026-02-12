@@ -16,6 +16,17 @@ DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 SCHEMA_VERSION = 3
 
 
+def _ensure_greenlet_available() -> None:
+    """校验 SQLAlchemy asyncio 运行依赖，避免运行时才出现隐晦错误。"""
+    try:
+        import greenlet  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "缺少运行依赖 greenlet，无法使用 SQLAlchemy 异步引擎。"
+            "请先执行 `pip install greenlet` 或使用 requirements.lock 安装。"
+        ) from exc
+
+
 def _ensure_sqlite_directory(database_url: str) -> None:
     if not database_url.startswith("sqlite"):
         return
@@ -34,6 +45,7 @@ def _ensure_sqlite_directory(database_url: str) -> None:
 
 
 _ensure_sqlite_directory(DATABASE_URL)
+_ensure_greenlet_available()
 
 engine_kwargs = {"echo": False, "pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):

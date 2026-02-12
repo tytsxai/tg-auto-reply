@@ -259,10 +259,15 @@ class ClientManager:
         """停止指定用户的客户端并取消监听任务。"""
         client = self._clients.get(user_id)
         if client:
-            await client.stop()
-        if user_id in self._tasks:
-            self._tasks[user_id].cancel()
-            del self._tasks[user_id]
+            try:
+                await client.stop()
+            except Exception:
+                logger.exception("停止用户 %s 客户端失败", user_id)
+
+        task = self._tasks.pop(user_id, None)
+        if task:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
     async def stop_all(self):
         """停止所有客户端。"""

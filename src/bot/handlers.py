@@ -164,17 +164,60 @@ async def start_log_worker() -> None:
     _log_worker_task = asyncio.create_task(_log_worker(queue))
 
 
+def _drain_log_queue(queue: asyncio.Queue[_LogRecord]) -> int:
+    """清空日志队列并返回被丢弃的业务日志数量。"""
+    dropped = 0
+    while True:
+        try:
+            item = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+
+        if item is not _LOG_STOP:
+            dropped += 1
+        queue.task_done()
+    return dropped
+
+
 async def stop_log_worker() -> None:
     """停止日志写入任务并尽量刷新剩余队列。"""
-    global _log_queue, _log_worker_task
+    global _log_queue, _log_worker_task, _log_drop_count
     queue = _log_queue
     task = _log_worker_task
     _log_queue = None
     _log_worker_task = None
     if not queue or not task:
         return
-    await queue.put(_LOG_STOP)
-    await task
+
+    if task.done():
+        dropped = _drain_log_queue(queue)
+        if dropped:
+            _log_drop_count += dropped
+            logger.error("日志 worker 已停止，丢弃 %s 条未写入日志", dropped)
+        await asyncio.gather(task, return_exceptions=True)
+        return
+
+    try:
+        queue.put_nowait(_LOG_STOP)
+    except asyncio.QueueFull:
+        try:
+            await asyncio.wait_for(queue.put(_LOG_STOP), timeout=2.0)
+        except asyncio.TimeoutError:
+            logger.error("日志队列已满且 worker 无法及时消费，强制停止日志 worker")
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            dropped = _drain_log_queue(queue)
+            if dropped:
+                _log_drop_count += dropped
+                logger.error("强制停止日志 worker，丢弃 %s 条未写入日志", dropped)
+            return
+
+    try:
+        await asyncio.wait_for(task, timeout=5.0)
+    except asyncio.TimeoutError:
+        logger.error("停止日志 worker 超时，已强制取消任务")
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
 
 
 async def flush_log_queue(timeout: float | None = None) -> None:

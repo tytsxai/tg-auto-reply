@@ -534,3 +534,37 @@ async def test_chat_queue_serializes(db_env):
     await task
 
     await handlers._clear_user_chat_queue(user_id)
+
+
+@pytest.mark.asyncio
+async def test_stop_log_worker_drains_queue_when_worker_already_dead(db_env):
+    handlers = db_env["handlers"]
+
+    await handlers.stop_log_worker()
+
+    queue = asyncio.Queue(maxsize=1)
+    queue.put_nowait(
+        handlers._LogRecord(
+            user_id=0,
+            chat_id=0,
+            chat_title=None,
+            sender_name=None,
+            original_message=None,
+            ai_reply=None,
+            status="sent",
+        )
+    )
+
+    done_task = asyncio.create_task(asyncio.sleep(0))
+    await done_task
+
+    handlers._log_queue = queue
+    handlers._log_worker_task = done_task
+    before_drop = handlers.get_log_metrics()["drop_total"]
+
+    await asyncio.wait_for(handlers.stop_log_worker(), timeout=1.0)
+
+    after_drop = handlers.get_log_metrics()["drop_total"]
+    assert after_drop >= before_drop + 1
+    assert handlers._log_queue is None
+    assert handlers._log_worker_task is None
