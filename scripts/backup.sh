@@ -24,7 +24,10 @@ if [[ "$DATABASE_URL" == sqlite* ]]; then
   elif [[ "$db_path_from_url" == /./* ]]; then
     db_path_from_url="$ROOT_DIR/${db_path_from_url#/./}"
   elif [[ "$db_path_from_url" == //* ]]; then
-    db_path_from_url="/${db_path_from_url##/}"
+    while [[ "$db_path_from_url" == /* ]]; do
+      db_path_from_url="${db_path_from_url#/}"
+    done
+    db_path_from_url="/$db_path_from_url"
   elif [[ "$db_path_from_url" == /* ]]; then
     db_path_from_url="$db_path_from_url"
   else

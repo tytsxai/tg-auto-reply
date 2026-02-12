@@ -24,6 +24,7 @@ async def test_health_ready_and_metrics(db_env, monkeypatch):
         return True, health.SCHEMA_VERSION
 
     monkeypatch.setattr(server, "_db_check", fake_db_check)
+    monkeypatch.setenv("ENABLE_ASYNC_LOGGING", "0")
 
     ready_resp = await server._handle_ready(make_mocked_request("GET", "/readyz"))
     assert ready_resp.status == 200
@@ -31,6 +32,8 @@ async def test_health_ready_and_metrics(db_env, monkeypatch):
     metrics_resp = await server._handle_metrics(make_mocked_request("GET", "/metrics"))
     assert "bot_pending_reply_tasks" in metrics_resp.text
     assert "bot_active_reply_tasks" in metrics_resp.text
+    assert "bot_log_queue_size" in metrics_resp.text
+    assert "bot_log_drop_total" in metrics_resp.text
 
 
 @pytest.mark.asyncio
@@ -68,3 +71,59 @@ async def test_health_auth_bearer_token():
         make_mocked_request("GET", "/healthz", headers={"Authorization": "Bearer secret"})
     )
     assert ok_resp.status == 200
+
+
+@pytest.mark.asyncio
+async def test_ready_fails_when_async_log_worker_dead(db_env, monkeypatch):
+    import src.monitoring.health as health
+
+    server = health.HealthServer("127.0.0.1", 8080, token=None)
+
+    async def fake_db_check():
+        return True, health.SCHEMA_VERSION
+
+    monkeypatch.setattr(server, "_db_check", fake_db_check)
+    monkeypatch.setenv("ENABLE_ASYNC_LOGGING", "1")
+    monkeypatch.setattr(
+        health.bot_handlers,
+        "get_log_metrics",
+        lambda: {
+            "worker_alive": 0,
+            "queue_size": 0,
+            "sync_fallback_total": 0,
+            "drop_total": 0,
+            "write_failure_total": 0,
+        },
+    )
+
+    ready_resp = await server._handle_ready(make_mocked_request("GET", "/readyz"))
+    assert ready_resp.status == 503
+    payload = ready_resp.text
+    assert "async_log_worker_alive" in payload
+
+
+@pytest.mark.asyncio
+async def test_ready_ignores_log_worker_when_async_logging_disabled(db_env, monkeypatch):
+    import src.monitoring.health as health
+
+    server = health.HealthServer("127.0.0.1", 8080, token=None)
+
+    async def fake_db_check():
+        return True, health.SCHEMA_VERSION
+
+    monkeypatch.setattr(server, "_db_check", fake_db_check)
+    monkeypatch.setenv("ENABLE_ASYNC_LOGGING", "0")
+    monkeypatch.setattr(
+        health.bot_handlers,
+        "get_log_metrics",
+        lambda: {
+            "worker_alive": 0,
+            "queue_size": 0,
+            "sync_fallback_total": 0,
+            "drop_total": 0,
+            "write_failure_total": 0,
+        },
+    )
+
+    ready_resp = await server._handle_ready(make_mocked_request("GET", "/readyz"))
+    assert ready_resp.status == 200

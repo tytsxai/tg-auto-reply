@@ -49,7 +49,8 @@ async def test_userclient_connect_failure():
             return True
 
     client._client = DummyClient()
-    assert await client.connect() is False
+    with pytest.raises(RuntimeError, match="boom"):
+        await client.connect()
 
 
 def test_userclient_session_string():

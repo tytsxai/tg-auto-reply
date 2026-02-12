@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 
 from aiohttp import web
@@ -82,12 +83,25 @@ class HealthServer:
     async def _handle_ready(self, request: web.Request) -> web.Response:
         self._require_auth(request)
         db_ok, schema_version = await self._db_check()
-        ready = db_ok and (schema_version == SCHEMA_VERSION)
+
+        async_logging_enabled = os.getenv("ENABLE_ASYNC_LOGGING", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        log_metrics = bot_handlers.get_log_metrics()
+        log_worker_alive = bool(log_metrics["worker_alive"])
+        logging_ok = (not async_logging_enabled) or log_worker_alive
+
+        ready = db_ok and (schema_version == SCHEMA_VERSION) and logging_ok
         payload = {
             "status": "ok" if ready else "error",
             "db_ok": db_ok,
             "schema_version": schema_version,
             "expected_schema_version": SCHEMA_VERSION,
+            "async_logging_enabled": async_logging_enabled,
+            "async_log_worker_alive": log_worker_alive,
         }
         return web.json_response(payload, status=200 if ready else 503)
 
@@ -100,6 +114,7 @@ class HealthServer:
         per_user_pending = bot_handlers.MAX_PENDING_REPLY_TASKS_PER_USER
         running_clients = client_manager.running_count()
         registered_clients = client_manager.registered_count()
+        log_metrics = bot_handlers.get_log_metrics()
 
         active_users = None
         try:
@@ -136,6 +151,21 @@ class HealthServer:
             "# HELP bot_registered_clients Registered telethon clients.",
             "# TYPE bot_registered_clients gauge",
             f"bot_registered_clients {registered_clients}",
+            "# HELP bot_log_worker_alive Async log worker alive state (1=alive, 0=stopped).",
+            "# TYPE bot_log_worker_alive gauge",
+            f"bot_log_worker_alive {log_metrics['worker_alive']}",
+            "# HELP bot_log_queue_size Async log queue size.",
+            "# TYPE bot_log_queue_size gauge",
+            f"bot_log_queue_size {log_metrics['queue_size']}",
+            "# HELP bot_log_sync_fallback_total Sync log fallback count when queue is full.",
+            "# TYPE bot_log_sync_fallback_total counter",
+            f"bot_log_sync_fallback_total {log_metrics['sync_fallback_total']}",
+            "# HELP bot_log_drop_total Dropped log records count.",
+            "# TYPE bot_log_drop_total counter",
+            f"bot_log_drop_total {log_metrics['drop_total']}",
+            "# HELP bot_log_write_failure_total Failed log write attempts.",
+            "# TYPE bot_log_write_failure_total counter",
+            f"bot_log_write_failure_total {log_metrics['write_failure_total']}",
             "# HELP bot_schema_version Current database schema version.",
             "# TYPE bot_schema_version gauge",
             f"bot_schema_version {SCHEMA_VERSION}",

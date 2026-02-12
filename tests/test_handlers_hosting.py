@@ -107,3 +107,24 @@ async def test_start_hosting_login_invalid(db_env, monkeypatch):
 
     await handlers.start_hosting(update, context)
     assert any("登录已失效" in text for text in update.message.reply_text_calls)
+
+
+@pytest.mark.asyncio
+async def test_start_hosting_connect_exception(db_env, monkeypatch):
+    handlers = db_env["handlers"]
+    db = db_env["db"]
+
+    await _create_user_with_credentials(db, handlers.encryptor, telegram_id=8004)
+
+    class BrokenClient(StubClient):
+        async def connect(self) -> bool:
+            raise RuntimeError("network down")
+
+    broken_client = BrokenClient(user_id=8004, api_id=123, api_hash="hash")
+    monkeypatch.setattr(handlers, "UserClient", lambda *args, **kwargs: broken_client)
+
+    update = DummyUpdate(message=DummyMessage("/start_hosting"), user=DummyUser(id=8004))
+    context = DummyContext()
+
+    await handlers.start_hosting(update, context)
+    assert any("连接 Telegram 失败" in text for text in update.message.reply_text_calls)

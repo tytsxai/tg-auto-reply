@@ -17,7 +17,8 @@
 - [ ] 首次部署或升级后执行：`python scripts/migrate.py`
 - [ ] 校验 schema：`GET /readyz` 返回 200
 - [ ] 已执行一次备份演练：`./scripts/backup.sh /your/backup/path`
-- [ ] 可恢复验证：至少验证可从备份文件读取表结构/关键数据
+- [ ] 已执行一次恢复演练：`./scripts/restore.sh <db-backup> <key-backup>`（至少在测试环境）
+- [ ] 可恢复验证：至少验证可从备份文件恢复并启动成功
 
 ## 3) 单实例与并发
 

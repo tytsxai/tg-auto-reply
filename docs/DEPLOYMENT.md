@@ -56,8 +56,9 @@ Restart=on-failure
 ## 回滚建议
 
 - 停止服务
-- 恢复 `data/bot.db` 与 `data/encryption.key`
-- 回滚代码版本并重启
+- 回滚代码版本
+- 执行恢复：`./scripts/restore.sh <db-backup> <key-backup>`
+- 重启并确认 `GET /readyz` 返回 200
 
 ## 上线前最后核对
 

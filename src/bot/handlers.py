@@ -89,6 +89,9 @@ _LOG_BATCH_INTERVAL = _env_float("LOG_BATCH_INTERVAL", 1.0, minimum=0.1)
 _LOG_STOP = object()
 _log_queue: asyncio.Queue["_LogRecord"] | None = None
 _log_worker_task: asyncio.Task | None = None
+_log_sync_fallback_count = 0
+_log_drop_count = 0
+_log_write_failure_count = 0
 
 _last_reply_lock = asyncio.Lock()
 _last_scheduled_at: dict[tuple[int, int], datetime] = {}
@@ -135,6 +138,20 @@ def get_reply_limits() -> tuple[int, int]:
 def get_active_reply_task_count() -> int:
     """获取当前活跃（正在执行）的回复任务数量。"""
     return len(_active_reply_tasks)
+
+
+def get_log_metrics() -> dict[str, int]:
+    """返回日志队列健康指标，用于监控与告警。"""
+    queue = _log_queue
+    worker = _log_worker_task
+    worker_alive = bool(worker and not worker.done())
+    return {
+        "worker_alive": 1 if worker_alive else 0,
+        "queue_size": queue.qsize() if queue else 0,
+        "sync_fallback_total": _log_sync_fallback_count,
+        "drop_total": _log_drop_count,
+        "write_failure_total": _log_write_failure_count,
+    }
 
 
 async def start_log_worker() -> None:
@@ -616,7 +633,13 @@ async def _resolve_contact_target(
         client = client_manager.get_client(telegram_id)
         if not client:
             return None, None, "未找到可用的 Telegram 客户端，请先 /login"
-        authorized = await client.connect()
+        try:
+            authorized = await client.connect()
+        except Exception:
+            logger.exception("解析用户名时连接 Telegram 失败：telegram_id=%s", telegram_id)
+            if not client_manager.is_running(telegram_id):
+                await client.stop()
+            return None, None, "连接 Telegram 失败，请稍后重试"
         if not authorized:
             if not client_manager.is_running(telegram_id):
                 await client.stop()
@@ -648,6 +671,7 @@ async def _log_message(
     status: str,
 ) -> None:
     """记录消息日志，优先走异步队列，队列满时回退同步写入。"""
+    global _log_sync_fallback_count, _log_drop_count, _log_write_failure_count
     if status == "sent":
         await _update_recent_context(user_id, chat_id or 0, original_message, ai_reply)
     queue = _log_queue
@@ -666,24 +690,36 @@ async def _log_message(
             queue.put_nowait(record)
             return
         except asyncio.QueueFull:
+            _log_sync_fallback_count += 1
             logger.warning("日志队列已满，回退为同步写入")
 
-    async with async_session() as session:
-        session.add(
-            MessageLog(
-                user_id=record.user_id,
-                chat_id=record.chat_id,
-                chat_title=record.chat_title,
-                sender_name=record.sender_name,
-                original_message=record.original_message,
-                ai_reply=record.ai_reply,
-                status=record.status,
+    try:
+        async with async_session() as session:
+            session.add(
+                MessageLog(
+                    user_id=record.user_id,
+                    chat_id=record.chat_id,
+                    chat_title=record.chat_title,
+                    sender_name=record.sender_name,
+                    original_message=record.original_message,
+                    ai_reply=record.ai_reply,
+                    status=record.status,
+                )
             )
+            await session.commit()
+    except Exception:
+        _log_write_failure_count += 1
+        _log_drop_count += 1
+        logger.exception(
+            "同步写入日志失败，日志已丢弃：user_id=%s chat_id=%s status=%s",
+            record.user_id,
+            record.chat_id,
+            record.status,
         )
-        await session.commit()
 
 
 async def _flush_log_batch(queue: asyncio.Queue[_LogRecord], batch: list[_LogRecord]) -> None:
+    global _log_drop_count, _log_write_failure_count
     if not batch:
         return
     try:
@@ -704,7 +740,10 @@ async def _flush_log_batch(queue: asyncio.Queue[_LogRecord], batch: list[_LogRec
             )
             await session.commit()
     except Exception:
-        logger.exception("批量写入日志失败")
+        dropped = len(batch)
+        _log_write_failure_count += dropped
+        _log_drop_count += dropped
+        logger.exception("批量写入日志失败，丢弃 %s 条日志", dropped)
     finally:
         for _ in batch:
             queue.task_done()
@@ -1429,7 +1468,21 @@ async def start_hosting(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client_manager.add_client(client)
 
     client.set_message_handler(lambda event: _handle_incoming_message(telegram_id, event))
-    authorized = await client.connect()
+    try:
+        authorized = await client.connect()
+    except Exception:
+        logger.exception("托管启动前连接 Telegram 失败：telegram_id=%s", telegram_id)
+        if not client_manager.is_running(telegram_id):
+            await client.stop()
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+            failed_user = result.scalar_one_or_none()
+            if failed_user and failed_user.is_active:
+                failed_user.is_active = False
+                await session.commit()
+        await message.reply_text("❌ 连接 Telegram 失败，请稍后重试")
+        return
+
     if not authorized:
         # 非运行态下的临时连接要及时断开，避免占用连接资源
         if not client_manager.is_running(telegram_id):

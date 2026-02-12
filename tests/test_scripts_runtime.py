@@ -16,7 +16,13 @@ def _env_with_path(base: dict[str, str], root: Path) -> dict[str, str]:
 def _test_python(root: Path) -> str:
     venv_python = root / ".venv" / "bin" / "python"
     if venv_python.exists():
-        return str(venv_python)
+        probe = subprocess.run(
+            [str(venv_python), "-c", "import greenlet"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            return str(venv_python)
     return sys.executable
 
 
@@ -290,6 +296,114 @@ def test_migrate_script_loads_dotenv_before_import(tmp_path):
         assert completed.returncode == 0
         assert db_path.exists()
         assert "数据库迁移完成" in completed.stdout
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_restore_script_restores_db_and_key(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "restore.sh"
+
+    backup_db = tmp_path / "backup.db"
+    conn = sqlite3.connect(backup_db)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('from-backup')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    live_db = tmp_path / "runtime" / "bot.db"
+    live_db.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(live_db)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('from-live')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    backup_key = tmp_path / "backup.key"
+    backup_key.write_text("new-key", encoding="utf-8")
+    live_key = tmp_path / "runtime" / "encryption.key"
+    live_key.write_text("old-key", encoding="utf-8")
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    f"DATABASE_URL=sqlite+aiosqlite:///{live_db}",
+                    f"ENCRYPTION_KEY_FILE={live_key}",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_db), str(backup_key)],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        assert completed.returncode == 0
+
+        conn = sqlite3.connect(live_db)
+        try:
+            value = conn.execute("SELECT v FROM demo LIMIT 1").fetchone()[0]
+        finally:
+            conn.close()
+        assert value == "from-backup"
+        assert live_key.read_text(encoding="utf-8") == "new-key"
+
+        db_pre_restore = list(live_db.parent.glob("bot.db.pre-restore.*"))
+        key_pre_restore = list(live_key.parent.glob("encryption.key.pre-restore.*"))
+        assert db_pre_restore
+        assert key_pre_restore
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_restore_script_rejects_invalid_backup(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "restore.sh"
+
+    invalid_backup = tmp_path / "invalid.db"
+    invalid_backup.write_text("not-a-sqlite-file", encoding="utf-8")
+    live_db = tmp_path / "runtime" / "bot.db"
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            f"DATABASE_URL=sqlite+aiosqlite:///{live_db}\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            ["bash", str(script), str(invalid_backup)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+
+        assert completed.returncode != 0
+        assert "校验失败" in completed.stderr
     finally:
         if had_env and old_env is not None:
             env_path.write_text(old_env, encoding="utf-8")

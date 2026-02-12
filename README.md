@@ -162,6 +162,7 @@ python main.py
 - 建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突。
 - SQLite 已启用 WAL 与 busy_timeout，生产环境默认启用单实例锁，避免多实例导致锁冲突；高并发场景建议迁移到更稳健的数据库。
 - 备份：至少备份 `data/bot.db` 与 `data/encryption.key`。
+- 恢复建议使用 `./scripts/restore.sh <db-backup> <key-backup>`，可自动做完整性校验与恢复前快照。
 - 升级版本前建议执行 `python scripts/migrate.py`，确保 schema 版本一致。
 
 ## 监控与健康检查（可选）

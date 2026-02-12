@@ -73,7 +73,7 @@
 | 端点 | 方法 | 说明 |
 | --- | --- | --- |
 | `/healthz` | GET | 存活探针，返回 200 表示进程存活 |
-| `/readyz` | GET | 就绪探针，检查 DB 连接和 schema 版本 |
+| `/readyz` | GET | 就绪探针，检查 DB 连接、schema 版本与异步日志工作线程状态 |
 | `/metrics` | GET | Prometheus 风格指标 |
 
 ### 认证
@@ -90,6 +90,19 @@ X-Health-Token: <token>
 Authorization: Bearer <token>
 ```
 
+### /readyz 返回字段（示例）
+
+```json
+{
+  "status": "ok",
+  "db_ok": true,
+  "schema_version": 3,
+  "expected_schema_version": 3,
+  "async_logging_enabled": true,
+  "async_log_worker_alive": true
+}
+```
+
 ### /metrics 指标说明
 
 | 指标 | 类型 | 说明 |
@@ -102,6 +115,13 @@ Authorization: Bearer <token>
 | `bot_concurrent_reply_limit` | Gauge | 最大并发回复数配置 |
 | `bot_pending_reply_tasks_limit_per_user` | Gauge | 单用户最大等待队列配置 |
 | `bot_concurrent_reply_limit_per_user` | Gauge | 单用户最大并发回复数配置 |
+| `bot_log_worker_alive` | Gauge | 异步日志工作线程状态（1=存活） |
+| `bot_log_queue_size` | Gauge | 异步日志队列当前长度 |
+| `bot_log_sync_fallback_total` | Counter | 队列满时回退同步写入次数 |
+| `bot_log_drop_total` | Counter | 日志丢弃累计次数 |
+| `bot_log_write_failure_total` | Counter | 日志写入失败累计次数 |
+| `bot_ai_circuit_open` | Gauge | AI 熔断状态（1=开启） |
+| `bot_ai_circuit_failures` | Gauge | AI 连续失败计数 |
 | `bot_schema_version` | Gauge | 当前 schema 版本 |
 | `bot_active_users` | Gauge | 托管中的活跃用户数（若统计成功） |
 

@@ -45,6 +45,7 @@
 
 - **/readyz 返回 503**
   - 检查数据库连接与 schema 版本。
+  - 若启用了异步日志（`ENABLE_ASYNC_LOGGING=1`），确认日志 worker 存活（`bot_log_worker_alive=1`）。
   - 确认 `DATABASE_URL` 与 `HEALTHCHECK_*` 配置。
 
 ## 性能与队列
@@ -52,3 +53,9 @@
 - **回复队列已满**
   - 调大 `MAX_PENDING_REPLY_TASKS` 或 `MAX_CONCURRENT_REPLIES`。
   - 减少 `AUTO_REPLY_COOLDOWN_SECONDS` 以降低重复触发。
+
+## 备份恢复
+
+- **需要快速回滚到备份**
+  - 先停服务，再执行：`./scripts/restore.sh <db-backup> <key-backup>`。
+  - 恢复后先检查 `/readyz`，再恢复流量。

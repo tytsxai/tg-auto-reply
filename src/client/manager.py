@@ -48,13 +48,12 @@ class UserClient:
 
         Returns:
             bool: True 表示已授权，False 表示需要登录
+
+        Raises:
+            Exception: 网络异常或 Telegram 服务不可达
         """
-        try:
-            await self.client.connect()
-            return await self.client.is_user_authorized()
-        except Exception:
-            logger.exception("用户 %s 连接失败", self.user_id)
-            return False
+        await self.client.connect()
+        return await self.client.is_user_authorized()
 
     async def send_code(self, phone: str) -> str:
         """发送登录验证码到指定手机号。

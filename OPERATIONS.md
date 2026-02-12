@@ -188,12 +188,16 @@ Persistent=true
 
 建议根据实际部署环境选择合适的定时方式。
 
-恢复示例：
+恢复示例（推荐使用脚本，支持恢复前快照与完整性校验）：
 
 ```bash
-cp backups/bot.db.2025-01-01 data/bot.db
-cp backups/encryption.key.2025-01-01 data/encryption.key
+./scripts/restore.sh backups/bot.db.2025-01-01 backups/encryption.key.2025-01-01
 ```
+
+脚本会：
+- 校验备份文件是否为可读 SQLite
+- 覆盖前自动保留 `*.pre-restore.<timestamp>` 快照
+- 覆盖后再次校验数据库完整性
 
 ## 升级与回滚
 
@@ -207,8 +211,8 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 回滚流程建议：
 1. 停止服务
 2. 回滚代码到上一版本
-3. 恢复备份数据库与密钥
-4. 启动服务
+3. 执行恢复：`./scripts/restore.sh <db-backup> <key-backup>`
+4. 启动服务并验证 `/readyz` 为 200
 
 ## 运行参数建议
 
@@ -283,10 +287,26 @@ cp backups/encryption.key.2025-01-01 data/encryption.key
 ```
 
 功能：
-- 优先使用 `sqlite3 .backup` 命令（热备份，失败时自动回退复制）
+- 优先使用 `sqlite3 .backup` 命令（热备份，失败时自动回退 Python sqlite3 backup API）
 - 自动备份 `encryption.key`（如未使用环境变量）
-- 文件名格式：`bot.db.YYYY-MM-DD`
+- 文件名格式：`bot.db.YYYYMMDD-HHMMSS`
 - 会自动读取项目根目录 `.env`，并按 `DATABASE_URL` 解析 SQLite 数据库路径
+
+### restore.sh - 备份恢复
+
+```bash
+# 恢复数据库（必要参数）
+./scripts/restore.sh /opt/backups/bot.db.20260212-030000
+
+# 同时恢复密钥文件（推荐）
+./scripts/restore.sh /opt/backups/bot.db.20260212-030000 /opt/backups/encryption.key.20260212-030000
+```
+
+功能：
+- 校验备份文件完整性，拒绝损坏备份
+- 覆盖前自动生成 `*.pre-restore.<timestamp>` 快照
+- 兼容 `ENCRYPTION_KEY_FILE`，恢复密钥文件时自动按 600 权限写入
+- 当前仅支持 SQLite 数据库恢复
 
 ### migrate.py - 数据库迁移
 

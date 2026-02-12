@@ -271,6 +271,29 @@ async def test_resolve_contact_target_username_failures(db_env, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_resolve_contact_target_connect_exception(db_env, monkeypatch):
+    handlers = db_env["handlers"]
+
+    class BadClient:
+        async def connect(self):
+            raise RuntimeError("network down")
+
+        async def stop(self):
+            return None
+
+    monkeypatch.setattr(handlers.client_manager, "get_client", lambda _user_id: BadClient())
+    monkeypatch.setattr(handlers.client_manager, "is_running", lambda _user_id: False)
+
+    update = DummyUpdate(message=DummyMessage("test"))
+    contact_id, contact_name, error = await handlers._resolve_contact_target(
+        update, "@user", telegram_id=1
+    )
+    assert contact_id is None
+    assert contact_name is None
+    assert "连接 Telegram 失败" in error
+
+
+@pytest.mark.asyncio
 async def test_pending_task_counters(db_env):
     handlers = db_env["handlers"]
     handlers._pending_reply_tasks = 0
@@ -383,6 +406,63 @@ async def test_async_log_worker_writes(db_env):
         )
         log = result.scalar_one()
         assert log.status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_log_queue_full_fallback_metrics(db_env):
+    handlers = db_env["handlers"]
+    db = db_env["db"]
+
+    async with db.async_session() as session:
+        user = db.User(telegram_id=1004, is_active=True)
+        session.add(user)
+        await session.commit()
+        user_id = user.id
+
+    class DummyTask:
+        def done(self) -> bool:
+            return False
+
+    handlers._log_queue = asyncio.Queue(maxsize=1)
+    handlers._log_worker_task = DummyTask()
+    handlers._log_queue.put_nowait(
+        handlers._LogRecord(
+            user_id=0,
+            chat_id=0,
+            chat_title=None,
+            sender_name=None,
+            original_message=None,
+            ai_reply=None,
+            status="sent",
+        )
+    )
+
+    try:
+        await handlers._log_message(
+            user_id=user_id,
+            chat_id=456,
+            chat_title="chat",
+            sender_name="tester",
+            original_message="hello",
+            ai_reply="hi",
+            status="sent",
+        )
+
+        metrics = handlers.get_log_metrics()
+        assert metrics["sync_fallback_total"] >= 1
+
+        async with db.async_session() as session:
+            result = await session.execute(
+                select(db.MessageLog)
+                .where(db.MessageLog.user_id == user_id, db.MessageLog.chat_id == 456)
+                .order_by(db.MessageLog.id.desc())
+            )
+            log = result.scalars().first()
+            assert log is not None
+            assert log.status == "sent"
+    finally:
+        handlers._log_queue = None
+        handlers._log_worker_task = None
 
 
 @pytest.mark.asyncio
