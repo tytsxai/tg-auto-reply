@@ -9,6 +9,7 @@
 - [ ] 已设置 `BOT_TOKEN`
 - [ ] 已设置 `OPENAI_API_KEY`（或 `API_KEY`）
 - [ ] 已设置 `ENCRYPTION_KEY` 或 `ENCRYPTION_KEY_FILE`
+  - 建议验证密钥格式为 Fernet 兼容值（否则生产启动会失败）
 - [ ] 已设置 `ALLOWED_TELEGRAM_IDS`（若确需开放，显式 `ALLOW_UNRESTRICTED_ACCESS=1`）
 - [ ] `LOG_LEVEL`、`LOG_FILE` 已配置（建议落地文件并轮转）
 - [ ] 复核所有可选数值型环境变量：留空表示“走默认值”，不要写非法字符串

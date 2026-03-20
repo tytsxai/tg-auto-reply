@@ -20,8 +20,12 @@ cd tg-auto-reply
 python -m venv .venv
 source .venv/bin/activate
 
+# 安装运行依赖（推荐锁定版本）
+pip install -r requirements.lock
+pip install -e .
+
 # 安装开发依赖
-pip install -e '.[dev]'
+pip install -r requirements-dev.txt
 ```
 
 ### 配置开发环境
@@ -135,6 +139,28 @@ User (1) ──── (1) UserCredential
      (1) ──── (1) UserSettings
      (1) ──── (N) MessageLog
 ```
+
+## 生产相关脚本联调（开发环境建议）
+
+为避免“开发环境看起来正常，生产上线翻车”，建议在开发阶段也执行一次运维脚本联调：
+
+```bash
+# 预检（基础）
+python scripts/ready_check.py
+
+# 预检（严格：会实际做 DB/schema 校验）
+python scripts/ready_check.py --strict
+
+# 迁移 + 备份 + 恢复演练（建议在临时测试数据库）
+python scripts/migrate.py
+./scripts/backup.sh /tmp/tg-auto-reply-backups
+./scripts/restore.sh <db-backup> <key-backup>
+```
+
+注意事项：
+- `backup.sh` 默认在数据库文件不存在时直接失败；仅首次初始化场景可临时 `BACKUP_ALLOW_MISSING_DB=1`。
+- `restore.sh` 会检查实例锁，检测到服务在运行时拒绝恢复。
+- 生产环境下 `ENCRYPTION_KEY/ENCRYPTION_KEY_FILE` 必须是 Fernet 兼容密钥。
 
 ## 测试
 

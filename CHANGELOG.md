@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2026-02-12
+- Added `scripts/ready_check.py` for production preflight checks (including strict DB/schema mode).
+- Hardened backup/restore workflow: backup now fails by default when DB file is missing; restore now refuses to run when instance lock is held.
+- Added startup-time Fernet key format validation for `ENCRYPTION_KEY` / `ENCRYPTION_KEY_FILE` in production.
+- Improved shutdown robustness for async log worker and client stop path to reduce stuck shutdown risk.
+- Refreshed operations documentation (`README`, `docs/API.md`, `docs/DEVELOPMENT.md`, `docs/READY_CHECKLIST.md`, `docs/USER_GUIDE.md`) to match current production behavior.
+
 ## [1.0.5] - 2025-12-31
 - Removed markdown markers from bot replies to prevent formatting syntax leaks.
 - Polished login prompt copy for clearer instructions.

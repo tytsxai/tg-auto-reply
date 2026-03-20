@@ -189,3 +189,16 @@ encrypted = encryptor.encrypt("sensitive_data")
 # 解密数据
 decrypted = encryptor.decrypt(encrypted)
 ```
+
+
+## 运维脚本接口（CLI）
+
+> 以下脚本属于“运维接口”，推荐纳入发布流水线或值班手册。
+
+| 脚本 | 用法 | 说明 |
+| --- | --- | --- |
+| `scripts/ready_check.py` | `python scripts/ready_check.py [--strict]` | 上线前预检；`--strict` 会做 DB/schema 真实校验 |
+| `scripts/migrate.py` | `python scripts/migrate.py` | schema 迁移入口 |
+| `scripts/backup.sh` | `./scripts/backup.sh [backup-dir]` | SQLite 热备份 + 密钥备份；数据库缺失默认失败 |
+| `scripts/restore.sh` | `./scripts/restore.sh <db-backup> [key-backup]` | 恢复并校验；恢复前快照；实例锁占用时拒绝执行 |
+| `scripts/check_alerts.sh` | `./scripts/check_alerts.sh` | 关键日志关键词巡检 |

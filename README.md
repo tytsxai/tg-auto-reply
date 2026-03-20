@@ -45,6 +45,7 @@ API_KEY=
 API_BASE_URL=
 
 # 加密密钥 (用于加密存储用户凭证，不设置将写入 data/encryption.key)
+# 生产建议使用 Fernet 规范密钥（44 字符，urlsafe-base64）
 ENCRYPTION_KEY=
 # 可选：自定义密钥文件路径
 ENCRYPTION_KEY_FILE=
@@ -158,7 +159,7 @@ python main.py
 
 ## 生产运行建议
 
-- 生产环境务必设置 `ENVIRONMENT=production` 并提供 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`），避免重启/迁移后无法解密已保存的凭证。
+- 生产环境务必设置 `ENVIRONMENT=production` 并提供 **格式合法** 的 `ENCRYPTION_KEY`（或 `ENCRYPTION_KEY_FILE`），避免重启/迁移后无法解密已保存的凭证。
 - 生产环境必须配置 `ALLOWED_TELEGRAM_IDS`（或显式设置 `ALLOW_UNRESTRICTED_ACCESS=1`）。
 - 建议启用日志文件（`LOG_FILE`）并定期轮转。
 - 建议设置 `INSTANCE_LOCK_FILE`，避免多实例导致 polling 冲突。
