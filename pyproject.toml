@@ -1,12 +1,12 @@
 [project]
 name = "tg-auto-reply"
-version = "1.0.5"
+version = "1.0.6"
 description = "AI消息托管机器人 - Telegram 自动回复"
 requires-python = ">=3.10"
 dependencies = [
     "python-telegram-bot>=21.0",
     "telethon>=1.36.0",
-    "openai>=1.0.0",
+    "openai>=2.0.0,<3.0.0",
     "sqlalchemy>=2.0.0",
     "greenlet>=3.0.0",
     "aiosqlite>=0.19.0",

@@ -40,6 +40,7 @@ if [[ -z "$DB_PATH" && "$DATABASE_URL" == sqlite* && "$is_memory_db" -eq 0 ]]; t
   DB_PATH="$ROOT_DIR/data/bot.db"
 fi
 DEFAULT_KEY_PATH="$ROOT_DIR/data/encryption.key"
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-7}"
 
 mkdir -p "$BACKUP_DIR"
 TS="$(date +%Y%m%d-%H%M%S)"
@@ -152,3 +153,23 @@ if [ -z "${ENCRYPTION_KEY:-}" ]; then
 else
   echo "ℹ️ 使用环境变量 ENCRYPTION_KEY，跳过密钥文件备份"
 fi
+
+cleanup_old_backups() {
+  local retention_days="$1"
+  if [[ ! "$retention_days" =~ ^[0-9]+$ ]]; then
+    echo "⚠️ BACKUP_RETENTION_DAYS 非法：${retention_days}，跳过旧备份清理" >&2
+    return 0
+  fi
+  if [ "$retention_days" -le 0 ]; then
+    echo "ℹ️ BACKUP_RETENTION_DAYS=${retention_days}，跳过旧备份清理"
+    return 0
+  fi
+
+  local deleted_count
+  deleted_count="$(find "$BACKUP_DIR" -maxdepth 1 -type f \
+    \( -name 'bot.db.*' -o -name 'encryption.key.*' \) \
+    -mtime +"$retention_days" -print -delete 2>/dev/null | wc -l | tr -d ' ')"
+  echo "ℹ️ 已清理 ${retention_days} 天前的旧备份文件：${deleted_count} 个"
+}
+
+cleanup_old_backups "$BACKUP_RETENTION_DAYS"

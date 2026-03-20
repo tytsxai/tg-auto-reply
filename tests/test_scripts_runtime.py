@@ -4,6 +4,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -482,6 +483,124 @@ def test_backup_script_allows_missing_db_when_explicitly_configured(tmp_path):
             env_path.unlink()
 
 
+def test_backup_script_cleans_old_backups_with_retention(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "backup.sh"
+    backup_dir = tmp_path / "backups"
+    db_path = tmp_path / "runtime" / "bot.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('ok')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    old_db_backup = backup_dir / "bot.db.old"
+    old_db_backup.write_text("old", encoding="utf-8")
+    old_key_backup = backup_dir / "encryption.key.old"
+    old_key_backup.write_text("old", encoding="utf-8")
+    keep_backup = backup_dir / "bot.db.recent"
+    keep_backup.write_text("keep", encoding="utf-8")
+
+    old_ts = time.time() - 9 * 24 * 3600
+    os.utime(old_db_backup, (old_ts, old_ts))
+    os.utime(old_key_backup, (old_ts, old_ts))
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    f"DATABASE_URL=sqlite+aiosqlite:///{db_path}",
+                    "BACKUP_RETENTION_DAYS=7",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_dir)],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        assert completed.returncode == 0
+        assert "已清理 7 天前的旧备份文件" in completed.stdout
+        assert not old_db_backup.exists()
+        assert not old_key_backup.exists()
+        assert keep_backup.exists()
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
+def test_backup_script_skips_cleanup_on_invalid_retention(tmp_path):
+    root = Path(__file__).resolve().parent.parent
+    script = root / "scripts" / "backup.sh"
+    backup_dir = tmp_path / "backups"
+    db_path = tmp_path / "runtime" / "bot.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("CREATE TABLE demo(id INTEGER PRIMARY KEY, v TEXT)")
+        conn.execute("INSERT INTO demo(v) VALUES ('ok')")
+        conn.commit()
+    finally:
+        conn.close()
+
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    old_db_backup = backup_dir / "bot.db.old"
+    old_db_backup.write_text("old", encoding="utf-8")
+    old_ts = time.time() - 9 * 24 * 3600
+    os.utime(old_db_backup, (old_ts, old_ts))
+
+    env_path = root / ".env"
+    had_env = env_path.exists()
+    old_env = env_path.read_text(encoding="utf-8") if had_env else None
+
+    try:
+        env_path.write_text(
+            "\n".join(
+                [
+                    f"DATABASE_URL=sqlite+aiosqlite:///{db_path}",
+                    "BACKUP_RETENTION_DAYS=invalid",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        completed = subprocess.run(
+            ["bash", str(script), str(backup_dir)],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            env=os.environ.copy(),
+        )
+        assert completed.returncode == 0
+        assert "BACKUP_RETENTION_DAYS 非法" in completed.stderr
+        assert old_db_backup.exists()
+    finally:
+        if had_env and old_env is not None:
+            env_path.write_text(old_env, encoding="utf-8")
+        elif env_path.exists():
+            env_path.unlink()
+
+
 def test_restore_script_rejects_when_lock_is_held(tmp_path):
     root = Path(__file__).resolve().parent.parent
     script = root / "scripts" / "restore.sh"
@@ -539,8 +658,6 @@ def test_restore_script_rejects_when_lock_is_held(tmp_path):
         )
 
         # 等待锁进程完成加锁
-        import time
-
         time.sleep(0.6)
 
         completed = subprocess.run(

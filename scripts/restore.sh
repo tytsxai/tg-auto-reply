@@ -222,3 +222,5 @@ else
 fi
 
 echo "🎯 恢复完成。请在重启服务前确认应用进程已停止。"
+echo "⚠️  建议在重启前执行数据库迁移以防 schema 版本不一致："
+echo "    python scripts/migrate.py"

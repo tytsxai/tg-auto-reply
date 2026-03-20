@@ -20,5 +20,9 @@ RUN pip install --no-cache-dir .
 
 # 创建数据目录
 RUN mkdir -p /app/data
+RUN useradd -r -u 1001 -s /bin/false botuser \
+    && chown -R botuser:botuser /app/data \
+    && chmod 700 /app/data
+USER botuser
 
 CMD ["python", "main.py"]

@@ -9,6 +9,8 @@ services:
       - ENABLE_HTTP_HEALTHCHECK=1
       - HEALTHCHECK_HOST=0.0.0.0
       - HEALTHCHECK_PORT=8080
+      # 生产环境必须设置 HEALTHCHECK_TOKEN 以保护 /metrics 端点
+      # - HEALTHCHECK_TOKEN=your_secret_token_here
     volumes:
       - ./data:/app/data
     deploy:
