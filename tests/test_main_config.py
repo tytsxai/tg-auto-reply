@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from logging.handlers import RotatingFileHandler
 import pytest
 
 
@@ -65,3 +66,18 @@ def test_require_encryption_key_ignored_in_non_production(monkeypatch):
 
     main_module = _reload_main_module()
     main_module._require_encryption_key()
+
+
+def test_log_file_uses_rotating_handler(monkeypatch, tmp_path):
+    log_file = tmp_path / "logs" / "bot.log"
+    monkeypatch.setenv("LOG_FILE", str(log_file))
+
+    main_module = _reload_main_module()
+    rotating_handlers = [
+        handler for handler in main_module._handlers if isinstance(handler, RotatingFileHandler)
+    ]
+    assert rotating_handlers
+    assert log_file.parent.exists()
+
+    for handler in rotating_handlers:
+        handler.close()

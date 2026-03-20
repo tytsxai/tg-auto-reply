@@ -56,6 +56,27 @@ async def test_settings_and_prompt(db_env):
 
 
 @pytest.mark.asyncio
+async def test_set_prompt_rejects_too_long_prompt(db_env):
+    handlers = db_env["handlers"]
+    db = db_env["db"]
+    await _create_logged_in_user(db, telegram_id=3002)
+
+    long_prompt = "a" * 2001
+    update = DummyUpdate(message=DummyMessage("/set_prompt"), user=DummyUser(id=3002))
+    context = DummyContext(args=[long_prompt])
+
+    await handlers.set_prompt(update, context)
+    assert any("提示词过长" in text for text in update.message.reply_text_calls)
+
+    async with db.async_session() as session:
+        result = await session.execute(
+            select(db.UserSettings).join(db.User).where(db.User.telegram_id == 3002)
+        )
+        settings = result.scalar_one_or_none()
+        assert settings is None
+
+
+@pytest.mark.asyncio
 async def test_whitelist_flow(db_env):
     handlers = db_env["handlers"]
     db = db_env["db"]
@@ -130,6 +151,16 @@ async def test_logs_and_stats(db_env):
     update.message.reply_text_calls.clear()
     await handlers.stats(update, context)
     assert any("总记录" in text for text in update.message.reply_text_calls)
+
+
+@pytest.mark.asyncio
+async def test_stats_requires_login(db_env):
+    handlers = db_env["handlers"]
+    update = DummyUpdate(message=DummyMessage("/stats"), user=DummyUser(id=5999))
+    context = DummyContext()
+
+    await handlers.stats(update, context)
+    assert any("请先 /login 登录" in text for text in update.message.reply_text_calls)
 
 
 @pytest.mark.asyncio

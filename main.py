@@ -4,6 +4,7 @@ import os
 import asyncio
 import logging
 import signal
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -15,7 +16,7 @@ if _log_file:
     try:
         log_path = Path(_log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        _handlers.append(logging.FileHandler(_log_file))
+        _handlers.append(RotatingFileHandler(_log_file, maxBytes=50*1024*1024, backupCount=5))
     except Exception as exc:
         print(f"⚠️ 无法创建日志文件 {_log_file}: {exc}")
 

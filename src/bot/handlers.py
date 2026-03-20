@@ -1761,6 +1761,9 @@ async def set_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not prompt:
         await message.reply_text("📝 用法：/set_prompt <提示词>")
         return
+    if len(prompt) > 2000:
+        await message.reply_text("提示词过长，请限制在 2000 字以内。")
+        return
     async with async_session() as session:
         result = await session.execute(
             select(User)
@@ -1791,10 +1794,14 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not message:
         return
     async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == telegram_id))
+        result = await session.execute(
+            select(User)
+            .options(selectinload(User.credentials))
+            .where(User.telegram_id == telegram_id)
+        )
         user = result.scalar_one_or_none()
-        if not user:
-            await message.reply_text("📊 暂无统计")
+        if not user or not user.credentials or not user.credentials.is_logged_in:
+            await message.reply_text("⚠️ 未授权，请先 /login 登录")
             return
         total = await session.execute(
             select(func.count()).select_from(MessageLog).where(MessageLog.user_id == user.id)
