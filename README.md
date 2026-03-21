@@ -104,6 +104,16 @@ BACKUP_ALLOW_MISSING_DB=0
 DB_BUSY_TIMEOUT_MS=30000
 DB_JOURNAL_MODE=WAL
 DB_SYNCHRONOUS=NORMAL
+
+# 数据库连接池（非 SQLite 时生效）
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=10
+
+# 其他可选
+# 允许在 AI 不可用时仍启动托管（留空为否）
+ALLOW_START_WITHOUT_AI=
+# 备份保留天数（<=0 表示不清理；默认 7）
+BACKUP_RETENTION_DAYS=7
 ```
 
 ### 3. 运行
@@ -168,6 +178,24 @@ python main.py
 - 恢复建议使用 `./scripts/restore.sh <db-backup> <key-backup>`，脚本会先检测实例锁，避免“运行中误恢复”。
 - `./scripts/backup.sh` 在数据库文件缺失时默认直接失败（防止假成功）；仅首次初始化场景可临时 `BACKUP_ALLOW_MISSING_DB=1`。
 - 升级版本前建议执行 `python scripts/migrate.py`，确保 schema 版本一致。
+
+## Docker 部署
+
+确保已复制并编辑 `.env` 文件，然后：
+
+```bash
+# 构建并启动
+docker compose up -d
+
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+```
+
+容器默认挂载 `./data` 目录持久化数据库和密钥文件，并通过 `/readyz` 端口（8080）提供健康检查。
+生产环境务必在 `docker-compose.yml` 中取消注释 `HEALTHCHECK_TOKEN` 并设置有效值。
 
 ## 监控与健康检查（可选）
 
