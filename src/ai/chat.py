@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 _client: AsyncOpenAI | None = None
 
 # 熔断器状态
+# asyncio 单线程事件循环内，纯整数 += 在无 await 的同步段中不存在协程竞态；
+# 若未来引入线程池执行器调用此模块，需改用 threading.Lock 保护。
 _circuit_failure_count = 0
 _circuit_open_until: datetime | None = None
 _CIRCUIT_FAILURE_THRESHOLD = int(os.getenv("AI_CIRCUIT_FAILURE_THRESHOLD", "5"))

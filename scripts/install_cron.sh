@@ -11,9 +11,12 @@ fi
 BACKUP_DIR="${1:-$ROOT_DIR/backups}"
 RETENTION_DAYS="${2:-${LOG_RETENTION_DAYS:-90}}"
 
+# 从 .env 或当前环境获取 LOG_FILE，未设置则留空（check_alerts.sh 会静默跳过）
+LOG_FILE_VAL="${LOG_FILE:-}"
+
 CRON_BACKUP="0 3 * * * $ROOT_DIR/scripts/backup.sh $BACKUP_DIR"
-CRON_CLEANUP="0 4 * * * $ROOT_DIR/scripts/cleanup_logs.py $RETENTION_DAYS"
-CRON_ALERT="*/5 * * * * $ROOT_DIR/scripts/check_alerts.sh"
+CRON_CLEANUP="0 4 * * * python3 $ROOT_DIR/scripts/cleanup_logs.py $RETENTION_DAYS"
+CRON_ALERT="*/5 * * * * LOG_FILE=$LOG_FILE_VAL $ROOT_DIR/scripts/check_alerts.sh"
 
 apply="${3:-}"
 

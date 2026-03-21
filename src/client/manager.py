@@ -124,11 +124,14 @@ class UserClient:
         self._running = True
         reconnect_initial = float(os.getenv("CLIENT_RECONNECT_INITIAL_SECONDS", "1"))
         reconnect_max = float(os.getenv("CLIENT_RECONNECT_MAX_SECONDS", "30"))
+        # CLIENT_RECONNECT_MAX_ATTEMPTS=0 表示无限重连（默认），>0 为最大尝试次数
+        reconnect_max_attempts = int(os.getenv("CLIENT_RECONNECT_MAX_ATTEMPTS", "0"))
         if reconnect_initial <= 0:
             reconnect_initial = 1.0
         if reconnect_max < reconnect_initial:
             reconnect_max = reconnect_initial
         backoff = reconnect_initial
+        attempt = 0
 
         try:
             while self._running:
@@ -140,18 +143,28 @@ class UserClient:
                         break
                     logger.info("用户 %s 开始监听消息", self.user_id)
                     backoff = reconnect_initial
+                    attempt = 0  # 成功连接后重置计数
                     await self.client.run_until_disconnected()
                 except asyncio.CancelledError:
                     self._running = False
                     raise
                 except Exception:
-                    logger.exception("用户 %s 监听异常", self.user_id)
+                    attempt += 1
+                    logger.exception("用户 %s 监听异常（第 %d 次）", self.user_id, attempt)
                     try:
                         await self.client.disconnect()
                     except Exception:
                         logger.debug("用户 %s 断线清理失败", self.user_id, exc_info=True)
 
                 if not self._running:
+                    break
+                if reconnect_max_attempts > 0 and attempt >= reconnect_max_attempts:
+                    logger.error(
+                        "用户 %s 重连次数已达上限 %d，停止监听",
+                        self.user_id,
+                        reconnect_max_attempts,
+                    )
+                    self._running = False
                     break
                 if backoff > 0:
                     logger.warning("用户 %s 断线，%s 秒后重连", self.user_id, backoff)
@@ -257,7 +270,7 @@ class ClientManager:
 
     async def stop_client(self, user_id: int):
         """停止指定用户的客户端并取消监听任务。"""
-        client = self._clients.get(user_id)
+        client = self._clients.pop(user_id, None)  # 同步移除，防止内存泄漏
         if client:
             try:
                 await client.stop()

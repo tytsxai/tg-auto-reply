@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2026-03-22
+- Strip query-string from `OPENAI_BASE_URL` in startup log to avoid leaking API keys.
+- `check_alerts.sh`: silently exit 0 when `LOG_FILE` is unset or missing, preventing false cron alerts.
+- `install_cron.sh`: forward `LOG_FILE` into cron env; use `python3` explicitly for cleanup job.
+- `src/ai/chat.py`: document circuit-breaker thread-safety assumption.
+- `src/client/manager.py`: add `CLIENT_RECONNECT_MAX_ATTEMPTS` cap; log attempt count on reconnect; fix memory leak in `stop_client` by using `pop`.
+- `src/monitoring/health.py`: expose `bot_clients_online`, `bot_running_clients`, `ai_client_initialized` in `/readyz` payload.
+- `src/utils/crypto.py`: add `Encryptor.reload()` for zero-downtime key rotation.
+- `tests/test_coverage_boost.py`: add coverage tests for DB migration paths, circuit-breaker recovery, reconnect cap, and health-check error branches.
+
 ## [1.0.6] - 2026-02-12
 - Added `scripts/ready_check.py` for production preflight checks (including strict DB/schema mode).
 - Hardened backup/restore workflow: backup now fails by default when DB file is missing; restore now refuses to run when instance lock is held.

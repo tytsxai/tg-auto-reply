@@ -10,6 +10,7 @@ from aiohttp import web
 from sqlalchemy import func, select, text
 
 from src.ai import get_circuit_status
+from src.ai.chat import _client as _ai_client
 from src.bot import handlers as bot_handlers
 from src.client import client_manager
 from src.db import SCHEMA_VERSION, async_session, get_schema_version, User
@@ -94,6 +95,11 @@ class HealthServer:
         log_worker_alive = bool(log_metrics["worker_alive"])
         logging_ok = (not async_logging_enabled) or log_worker_alive
 
+        # bot 在线：至少有一个 Telethon 客户端正在运行监听
+        bot_online = client_manager.running_count() > 0
+        # AI client 已初始化（_client 单例不为 None，即已成功调用过 get_client()）
+        ai_initialized = _ai_client is not None
+
         ready = db_ok and (schema_version == SCHEMA_VERSION) and logging_ok
         payload = {
             "status": "ok" if ready else "error",
@@ -102,6 +108,9 @@ class HealthServer:
             "expected_schema_version": SCHEMA_VERSION,
             "async_logging_enabled": async_logging_enabled,
             "async_log_worker_alive": log_worker_alive,
+            "bot_clients_online": bot_online,
+            "bot_running_clients": client_manager.running_count(),
+            "ai_client_initialized": ai_initialized,
         }
         return web.json_response(payload, status=200 if ready else 503)
 

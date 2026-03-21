@@ -11,12 +11,12 @@ fi
 
 LOG_FILE="${LOG_FILE:-}"
 if [ -z "$LOG_FILE" ]; then
-  echo "❌ LOG_FILE 未设置"
-  exit 2
+  # LOG_FILE 未配置时静默跳过，避免 cron 误报
+  exit 0
 fi
 if [ ! -f "$LOG_FILE" ]; then
-  echo "❌ 日志文件不存在：$LOG_FILE"
-  exit 2
+  # 日志文件尚不存在（服务未启动或首次运行），静默跳过
+  exit 0
 fi
 
 LOOKBACK_LINES="${ALERT_LOOKBACK_LINES:-500}"

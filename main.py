@@ -98,10 +98,12 @@ def _log_startup_summary(allowed_ids: set[int] | None) -> None:
         os.getenv("LOG_BATCH_INTERVAL", "1.0"),
         os.getenv("LOG_QUEUE_MAXSIZE", "1000"),
     )
+    _raw_base_url = os.getenv("OPENAI_BASE_URL", os.getenv("API_BASE_URL", ""))
+    _safe_base_url = _raw_base_url.split("?")[0] if _raw_base_url else ""
     logger.info(
         "AI: model=%s base_url=%s timeout=%s retries=%s",
         os.getenv("AI_MODEL", "deepseek-ai/DeepSeek-V3.2"),
-        os.getenv("OPENAI_BASE_URL", os.getenv("API_BASE_URL", "")),
+        _safe_base_url,
         os.getenv("AI_TIMEOUT_SECONDS", "15"),
         os.getenv("AI_MAX_RETRIES", "1"),
     )

@@ -62,6 +62,15 @@ class Encryptor:
     def __init__(self):
         self._fernet = Fernet(get_or_create_key())
 
+    def reload(self) -> None:
+        """重新从环境变量/密钥文件加载密钥，用于密钥轮换后的热更新。
+
+        调用前须先更新 ENCRYPTION_KEY 环境变量或密钥文件，
+        热更新期间若有并发加解密操作可能短暂失败，请在低峰期执行。
+        """
+        self._fernet = Fernet(get_or_create_key())
+        logger.info("Encryptor 密钥已热更新")
+
     def encrypt(self, data: str) -> str:
         """加密字符串"""
         return self._fernet.encrypt(data.encode()).decode()
