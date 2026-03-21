@@ -46,8 +46,10 @@
 | `HEALTHCHECK_TOKEN` | 否 | - | 健康检查访问令牌（生产环境对外暴露必须设置） |
 | `CLIENT_RECONNECT_INITIAL_SECONDS` | 否 | `1` | 客户端断线重连初始等待 |
 | `CLIENT_RECONNECT_MAX_SECONDS` | 否 | `30` | 客户端断线重连最大等待 |
+| `CLIENT_RECONNECT_MAX_ATTEMPTS` | 否 | `0` | 最大重连次数（0=无限重连，>0=达上限后停止监听） |
 | `LOG_RETENTION_DAYS` | 否 | `90` | 日志保留天数 |
 | `BACKUP_ALLOW_MISSING_DB` | 否 | `0` | 允许 backup.sh 在 DB 文件缺失时返回成功（仅首次初始化可临时开启） |
+| `BACKUP_RETENTION_DAYS` | 否 | `7` | 备份保留天数（<=0 表示不清理） |
 | `ALERT_LOOKBACK_LINES` | 否 | `500` | 告警检测回溯行数（check_alerts.sh） |
 | `ALERT_KEYWORDS` | 否 | - | 告警关键字（正则，check_alerts.sh 使用） |
 | `DB_BUSY_TIMEOUT_MS` | 否 | `30000` | SQLite busy_timeout |
@@ -228,6 +230,19 @@ Persistent=true
 2. 回滚代码到上一版本
 3. 执行恢复：`./scripts/restore.sh <db-backup> <key-backup>`
 4. 启动服务并验证 `/readyz` 为 200
+
+## 密钥热更新（零停机轮换）
+
+`Encryptor.reload()` 支持在不重启进程的情况下轮换加密密钥：
+
+1. 生成新的 Fernet 密钥并更新 `ENCRYPTION_KEY` 环境变量（或替换 `ENCRYPTION_KEY_FILE` 指向的文件）
+2. 在低峰期调用 `encryptor.reload()`（可通过运维脚本或程序内部触发）
+3. 验证加解密功能正常后，安全删除旧密钥备份
+
+注意事项：
+- 轮换期间若有并发加解密操作，可能短暂失败，建议在低峰期执行
+- 已用旧密钥加密的数据库凭证无法用新密钥解密；轮换前需确认无需访问旧凭证，或先迁移数据
+- 生产环境建议先在测试环境验证密钥更新流程再执行
 
 ## 运行参数建议
 

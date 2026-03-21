@@ -67,7 +67,7 @@ src/
 - `_handle_incoming_message()`: 处理用户账号收到的消息，执行过滤和队列管理
 - `_send_reply_task()`: 执行 AI 回复任务，支持延迟发送
 - `_should_reply()`: 判断是否应该回复（黑白名单、群聊过滤）
-- `_build_context()`: 构建 AI 对话上下文（最近 5 条消息）
+- `_build_context()`: 构建 AI 对话上下文（最近 N 条消息，由 `CONTEXT_MAX_MESSAGES` 控制，默认 10）
 
 并发控制：
 - `MAX_CONCURRENT_REPLIES`: 最大并发回复数（默认 4）

@@ -4,7 +4,13 @@
 
 - **无法解密凭证**
   - 可能密钥丢失或更换。确认 `ENCRYPTION_KEY` 或 `ENCRYPTION_KEY_FILE` 是否一致。
+  - 若刚执行过密钥热更新（`encryptor.reload()`），旧密钥加密的凭证已无法解密，需重新 `/login`。
   - 必要时重新 `/login`。
+
+- **密钥热更新后服务异常**
+  - 确认新密钥是合法的 Fernet 格式（44 字符 urlsafe-base64）。
+  - 检查是否有用旧密钥加密的凭证仍在使用；若有，需让对应用户重新 `/login`。
+  - 如需回退，恢复旧密钥文件后再次调用 `encryptor.reload()`。
 
 - **登录已失效**
   - Telegram 会话过期或被踢下线。

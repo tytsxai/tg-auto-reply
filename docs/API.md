@@ -73,7 +73,7 @@
 | 端点 | 方法 | 说明 |
 | --- | --- | --- |
 | `/healthz` | GET | 存活探针，返回 200 表示进程存活 |
-| `/readyz` | GET | 就绪探针，检查 DB 连接、schema 版本与异步日志工作线程状态 |
+| `/readyz` | GET | 就绪探针，检查 DB 连接、schema 版本与异步日志工作线程状态；响应体包含 `bot_clients_online`（是否有客户端在线）、`bot_running_clients`（运行中客户端数）、`ai_client_initialized`（AI 客户端是否已初始化）等字段 |
 | `/metrics` | GET | Prometheus 风格指标 |
 
 ### 认证
@@ -188,7 +188,13 @@ encrypted = encryptor.encrypt("sensitive_data")
 
 # 解密数据
 decrypted = encryptor.decrypt(encrypted)
+
+# 密钥热更新（零停机轮换密钥）
+# 先更新 ENCRYPTION_KEY 环境变量或密钥文件，再调用：
+encryptor.reload()
 ```
+
+> 注意：`reload()` 期间若有并发加解密操作可能短暂失败，建议在低峰期执行。
 
 
 ## 运维脚本接口（CLI）

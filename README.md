@@ -4,7 +4,7 @@
 
 ## 功能特点
 
-- 🤖 **AI 智能回复** - 基于 OpenAI 兼容接口生成简短自然回复（附带最近 5 条上下文）
+- 🤖 **AI 智能回复** - 基于 OpenAI 兼容接口生成简短自然回复（默认携带最近 10 条对话上下文，可通过 `CONTEXT_MAX_MESSAGES` 调整）
 - 🔐 **安全加密** - Fernet 加密存储 Telegram 凭证与 session
 - 📝 **透明日志** - 回复记录入库，/logs 可查看最近 5 条
 - 🎛️ **完全控制** - 随时启停，一键退出
@@ -87,6 +87,8 @@ LOG_BATCH_INTERVAL=1.0
 # 客户端断线重连
 CLIENT_RECONNECT_INITIAL_SECONDS=1
 CLIENT_RECONNECT_MAX_SECONDS=30
+# 最大重连次数（0=无限重连，>0=达到上限后停止监听）
+CLIENT_RECONNECT_MAX_ATTEMPTS=0
 
 # 启动自检
 ENABLE_STARTUP_HEALTHCHECKS=1
@@ -165,7 +167,7 @@ python main.py
 ## 工作原理
 
 - 机器人仅作为控制面板使用；登录后由 Telethon 以**你的 Telegram 用户账号**监听并回复消息。
-- AI 回复基于 OpenAI 兼容接口生成，默认使用 `AI_MODEL`，并带入同一对话最近 5 条日志作为上下文。
+- AI 回复基于 OpenAI 兼容接口生成，默认使用 `AI_MODEL`，并带入同一对话最近 10 条消息作为上下文（由 `CONTEXT_MAX_MESSAGES` 控制）。
 
 ## 生产运行建议
 
@@ -202,7 +204,7 @@ docker compose down
 设置 `HEALTHCHECK_PORT` 或 `ENABLE_HTTP_HEALTHCHECK=1` 后，会启动轻量 HTTP 服务：
 
 - `GET /healthz` 存活探针
-- `GET /readyz` 就绪探针（含 DB & schema 检查）
+- `GET /readyz` 就绪探针（含 DB & schema 检查、异步日志 worker 状态，以及 `bot_clients_online`/`bot_running_clients`/`ai_client_initialized` 等字段）
 - `GET /metrics` Prometheus 指标
 
 可选设置 `HEALTHCHECK_TOKEN`，请求时需携带：
@@ -247,6 +249,7 @@ python scripts/ready_check.py --strict
 - 代码开源，可自行审计
 - 随时可以 `/logout` 清除所有数据
 - 加密密钥来自 ENCRYPTION_KEY 或本地 `data/encryption.key`（可用 ENCRYPTION_KEY_FILE 指定路径）
+- 密钥支持零停机热更新：更新环境变量或密钥文件后调用 `encryptor.reload()`，无需重启进程
 - 登录过程中会尝试自动删除敏感消息，若仍可见请手动删除
 
 ## 技术栈

@@ -73,7 +73,18 @@ main.py
   - `./scripts/backup.sh`
   - `./scripts/restore.sh <db-backup> <key-backup>`
 
-## 本次变更（2026-02-12）
+## 本次变更（2026-03-22，v1.0.7）
+
+- `src/ai/chat.py`：补充熔断器线程安全假设注释。
+- `src/client/manager.py`：新增 `CLIENT_RECONNECT_MAX_ATTEMPTS` 重连上限（0=无限）；断线重连时记录尝试次数日志；修复 `stop_client` 使用 `pop` 避免内存泄漏。
+- `src/monitoring/health.py`：`/readyz` 响应体新增 `bot_clients_online`、`bot_running_clients`、`ai_client_initialized` 字段。
+- `src/utils/crypto.py`：新增 `Encryptor.reload()` 方法，支持零停机密钥轮换。
+- `scripts/check_alerts.sh`：`LOG_FILE` 未设置或文件缺失时静默退出 0，避免 cron 误报。
+- `scripts/install_cron.sh`：将 `LOG_FILE` 转发到 cron 环境；清理任务改用 `python3` 显式调用。
+- `main.py`：启动日志中过滤 `OPENAI_BASE_URL` 的 query-string，防止 API key 泄露。
+- `tests/test_coverage_boost.py`：补充 DB 迁移路径、熔断器恢复、重连上限、健康检查错误分支的覆盖测试。
+
+## 历史变更（2026-02-12，v1.0.6）
 
 - 新增 `scripts/restore.sh`：可执行恢复脚本（含完整性校验与恢复前快照）。
 - 增强 `handlers.py` 日志可靠性观测：增加日志丢弃/失败/回退计数指标。
