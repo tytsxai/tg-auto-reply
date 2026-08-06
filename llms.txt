@@ -1,0 +1,68 @@
+# tg-auto-reply · AI 消息托管机器人
+
+> LLM / AI-search summary for https://github.com/tytsxai/tg-auto-reply
+
+Self-hosted **Telegram AI message-hosting / auto-reply** system. A Bot UI controls login and settings; **Telethon** runs as the user's Telegram client to listen and reply. Replies are generated via **OpenAI-compatible** APIs. Credentials and sessions are stored with **Fernet** encryption in SQLAlchemy/SQLite. Includes whitelist/blacklist, delay, custom prompt, group toggle, logs/stats, circuit breaker, health endpoints, Docker, backup/restore.
+
+## Positioning
+
+- Chinese: 基于 AI 的 Telegram 消息托管 / 自动回复（自托管）。
+- English: Self-hosted Telegram AI auto-reply using Telethon user session + OpenAI-compatible models.
+- Audience: individuals needing away-replies, light support workflows, operators, Python developers.
+- Stack: Python 3.10+, python-telegram-bot, Telethon, OpenAI SDK, SQLAlchemy, aiosqlite, cryptography, aiohttp.
+- Entry: `python main.py` after `./install.sh` or venv setup.
+- Repository: https://github.com/tytsxai/tg-auto-reply
+- License: MIT
+
+## Architecture fact
+
+- Control plane: Bot commands only (`/login`, `/start_hosting`, settings, etc.).
+- Data plane: Telethon user client sends replies in the **user account** chats, not as the bot identity in those chats.
+- Default context window: last 10 messages (`CONTEXT_MAX_MESSAGES`).
+
+## What it can do
+
+- Login flow for API_ID/API_HASH/code; encrypted credential storage.
+- Start/stop hosting; AI on/off; reply delay; group reply toggle.
+- Whitelist / blacklist; custom system prompt.
+- Message logs and stats; production access control.
+- HTTP `/healthz`, `/readyz`, `/metrics` when enabled.
+- Scripts: backup/restore, migrate, ready_check, cleanup_logs, alerts.
+
+## What it does NOT do
+
+- Not a multi-tenant cloud product; you host token, keys, and DB.
+- Not official Telegram Business auto-reply SaaS.
+- Does not claim ToS exemption — operators must comply with Telegram policies and law.
+- Does not send AI replies through the control bot chat for peer conversations.
+
+## Critical production config
+
+- `BOT_TOKEN`, `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `AI_MODEL`
+- `ENVIRONMENT=production`, `ENCRYPTION_KEY` (or file), `ALLOWED_TELEGRAM_IDS`
+- Optional: concurrency, cooldown, circuit breaker, health token — see `.env.example`
+
+## Key docs
+
+- [README.md](README.md)
+- [OPERATIONS.md](OPERATIONS.md)
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/API.md](docs/API.md)
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- [docs/READY_CHECKLIST.md](docs/READY_CHECKLIST.md)
+
+## Quick start
+
+```bash
+git clone https://github.com/tytsxai/tg-auto-reply.git
+cd tg-auto-reply
+./install.sh
+cp .env.example .env
+source .venv/bin/activate
+python main.py
+```
+
+## Search keywords
+
+Telegram AI auto reply, Telegram 自动回复, Telethon hosting bot, AI 消息托管, OpenAI compatible Telegram, encrypted Telegram session bot, self-hosted auto-reply

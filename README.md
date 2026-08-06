@@ -1,14 +1,48 @@
-# AI消息托管机器人 (tg-auto-reply)
+# AI 消息托管机器人（tg-auto-reply）
 
-基于 AI 的 Telegram 消息托管助手，让你在忙碌时也不会错过重要对话。
+> **Telegram AI auto-reply / message hosting bot** — 忙碌时用 AI 代你回复私聊（及可选群聊），凭证 Fernet 加密，随时启停。
 
-## 功能特点
+开源、自托管的 **Telegram 消息托管助手**：Bot 只做控制面板；登录后通过 **Telethon 用户账号**监听并回复，AI 走 OpenAI 兼容接口（默认 SiliconFlow / DeepSeek 等可配）。
 
-- 🤖 **AI 智能回复** - 基于 OpenAI 兼容接口生成简短自然回复（默认携带最近 10 条对话上下文，可通过 `CONTEXT_MAX_MESSAGES` 调整）
-- 🔐 **安全加密** - Fernet 加密存储 Telegram 凭证与 session
-- 📝 **透明日志** - 回复记录入库，/logs 可查看最近 5 条
-- 🎛️ **完全控制** - 随时启停，一键退出
-- ⚙️ **灵活配置** - /settings 调整延迟/群聊回复/黑白名单策略，/set_prompt 自定义提示词
+- 仓库：https://github.com/tytsxai/tg-auto-reply
+- 入口：`python main.py`（或 `./install.sh` 后激活 venv）
+- License：MIT
+
+## 项目是什么 / 解决什么问题
+
+你不在线时，重要私信会堆积。本项目让你：
+
+1. 用 Bot 完成 `/login`（API_ID / API_HASH / 验证码）
+2. `/start_hosting` 后由 **你的用户会话**自动 AI 回复
+3. 用黑白名单、延迟、自定义 prompt、群聊开关精细控制
+4. `/logs` / `/stats` 审计回复；`/logout` 清除本地凭证
+
+## 适合谁
+
+| 角色 | 场景 |
+|------|------|
+| 个人用户 | 出差/专注时段自动简短回复 |
+| 客服轻量场景 | 非高峰托管（需自备合规与话术） |
+| 自托管运维 | Docker、健康检查、备份密钥与 DB |
+| 开发者 | PTB + Telethon + OpenAI 兼容 + SQLAlchemy 参考 |
+
+## 核心功能
+
+- 🤖 **AI 智能回复** — OpenAI 兼容接口；默认带最近 10 条上下文（`CONTEXT_MAX_MESSAGES`）
+- 🔐 **安全加密** — Fernet 加密 Telegram 凭证与 session
+- 📝 **透明日志** — 回复入库，`/logs` 查看最近记录
+- 🎛️ **完全控制** — `/start_hosting` / `/stop_hosting`，一键 `/logout`
+- ⚙️ **灵活配置** — `/settings` 延迟/群聊/策略，`/set_prompt`，`/whitelist` `/blacklist`
+- 🛡️ **生产向** — 访问控制、实例锁、AI 熔断、队列限流、`/healthz` `/readyz` `/metrics`
+
+## 技术栈
+
+- Python 3.10+
+- python-telegram-bot（控制面）
+- Telethon（用户客户端）
+- OpenAI 兼容 API
+- SQLAlchemy + SQLite（可扩展其它库）
+- cryptography（Fernet）
 
 ## 快速开始
 
@@ -343,6 +377,25 @@ pip install -e .
 | `cooldown` | 冷却时间内，跳过回复 |
 | `dropped` | 队列已满，消息被丢弃 |
 | `cancelled` | 任务被取消（停止托管/登出时） |
+
+## 使用场景
+
+- 短时离开：自动回复「稍后回复」类短句（可自定义 prompt）
+- 仅对白名单联系人托管，其它人静默
+- 运营侧需要可审计回复日志与启停开关
+
+## 限制与注意事项
+
+- AI 回复发生在 **你的用户账号会话**，不会出现在与控制 Bot 的聊天里
+- 需要 [my.telegram.org](https://my.telegram.org) 的 `api_id` / `api_hash`；属于用户客户端能力，请遵守 Telegram ToS 与当地法律
+- 生产必须配置 `ALLOWED_TELEGRAM_IDS`（或显式 `ALLOW_UNRESTRICTED_ACCESS=1`）与稳定 `ENCRYPTION_KEY`
+- 同一账号多端登录/多实例可能冲突；建议 `INSTANCE_LOCK_FILE` 与单实例部署
+- 默认 SQLite；极高并发场景需自行评估迁移更强数据库
+- 不是官方 Telegram 商业客服套件，也不提供云端托管账号
+
+## SEO / 检索关键词
+
+Telegram AI 自动回复, Telegram auto reply bot, Telethon 消息托管, AI 代回复 Telegram, OpenAI compatible Telegram bot, Fernet session 加密, self-hosted Telegram hosting bot
 
 ## 许可证
 
